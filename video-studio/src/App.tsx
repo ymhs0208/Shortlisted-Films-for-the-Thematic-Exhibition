@@ -767,17 +767,26 @@ export default function App() {
 
   return (
     <div className="app-shell min-h-screen antialiased">
-      <header className="topbar">
-        <button className="brand" onClick={() => setProject(null)} aria-label="返回專案首頁">
-          <span className="brand-mark"><Film size={20} /></span><span>EXPO <b>MOTION</b><small>STUDIO</small></span>
+      <header className="studio-header">
+        <button type="button" className="exhibition-brand video-brand" onClick={() => setProject(null)} aria-label="返回影片專案首頁">
+          <img className="brand-icon" src="../favicon.png" alt="" />
+          <span className="exhibition-brand-copy">
+            <span className="exhibition-affiliation">國立臺中科技大學</span>
+            <span className="exhibition-title">專題成果展</span>
+            <span className="exhibition-subtitle">影片工作室</span>
+          </span>
         </button>
-        {project && <>
-          <div className="project-crumb"><span>/</span><button onClick={() => setProject(null)}>我的專案</button><span>/</span><button className="crumb-current" onClick={rename}>{project.name}</button></div>
-          <div className="save-state"><span className={saved ? 'dot' : 'dot busy'} />{saved ? '已儲存至此裝置' : '儲存中…'}</div>
-        </>}
+        <div className="header-actions">
+          {project && <>
+            <div className="project-crumb"><span>/</span><button onClick={() => setProject(null)}>我的專案</button><span>/</span><button className="crumb-current" onClick={rename}>{project.name}</button></div>
+            <div className="save-state"><span className={saved ? 'dot' : 'dot busy'} />{saved ? '已儲存至此裝置' : '儲存中…'}</div>
+          </>}
+          <a className="guide-link" href="../index.html" aria-label="返回海報製作室"><ArrowLeft size={16} />海報製作室</a>
+        </div>
       </header>
 
-      {!project ? <main className="home">
+      {!project ? <>
+        <main className="home">
         <div className="hero">
           <div className="eyebrow"><Sparkles size={15} /> 專題成果展動畫製作工具</div>
           <h1>讓每一份創意，<br /><em>都值得被看見。</em></h1>
@@ -814,8 +823,13 @@ export default function App() {
             <button className="icon-button delete-project" title="刪除專案" onClick={() => void del(item)}><Trash2 size={16} /></button>
           </article>)}</div>}
         </section>
-        <footer className="home-footer"><a className="poster-return" href="../index.html">返回海報製作室</a><span>EXPO MOTION STUDIO　·　為你的故事，設計一個舞台</span></footer>
-      </main> : <>
+        </main>
+        <footer className="site-footer">
+          <strong className="site-footer-title">國立臺中科技大學</strong>
+          <span className="site-footer-english" lang="en">National Taichung University of Science and Technology</span>
+          <small className="site-footer-copyright">© 2026 國立臺中科技大學 資訊與流通學院專題成果展</small>
+        </footer>
+      </> : <>
         <div className="workflow"><div className="workflow-inner">{['專案', '片頭', '編輯影片', '片尾', '預覽匯出'].map((label, index) => <button key={label} className={`workflow-step ${stage === index + 1 ? 'active' : ''} ${stage > index + 1 ? 'past' : ''}`} disabled={index + 1 > Math.max(stage, 1)} onClick={() => go(index + 1)}><StageIcon stage={stage} number={index + 1} /><span>{label}</span>{index < 4 && <span className="step-line" />}</button>)}</div></div>
         <main className="studio-body">
           {stage === 1 && <section className="stage-panel center-panel"><div className="panel-kicker">STEP 01 · PROJECT</div><h1>設定你的專案</h1><p className="lead">專案由原站入圍資料自動按領域建立；這裡可調整影片標題與活動資訊。</p>
@@ -878,9 +892,13 @@ export default function App() {
             <div className="stage-actions spread"><button className="button secondary" onClick={() => go(4)}><ArrowLeft size={16} /> 返回片尾</button><button className="button primary export-button" disabled={rendering || !selectedOpening || !selectedEnding} onClick={() => void exportVideo()}>{rendering ? <><span className="spinner" /> 正在算繪 {progress}%</> : <><Download size={17} /> 匯出此領域 MP4</>}</button></div>
           </section>}
         </main>
-        <footer className="studio-footer"><a className="poster-return" href="../index.html">海報製作室</a><span>EXPO MOTION STUDIO</span><span className="footer-save"><span className={saved ? 'dot' : 'dot busy'} />{saved ? '所有變更已儲存' : '正在儲存…'}</span></footer>
+        <footer className="site-footer">
+          <strong className="site-footer-title">國立臺中科技大學</strong>
+          <span className="site-footer-english" lang="en">National Taichung University of Science and Technology</span>
+          <small className="site-footer-copyright">© 2026 國立臺中科技大學 資訊與流通學院專題成果展</small>
+        </footer>
       </>}
       {notice && <div className="toast" role="status">{notice}<button onClick={() => setNotice('')}><X size={14} /></button></div>}
-    </div>
+      </div>
   );
 }
