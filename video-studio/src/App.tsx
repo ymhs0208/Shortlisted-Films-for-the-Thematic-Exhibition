@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Video } from '@remotion/media';
 import { Player } from '@remotion/player';
@@ -113,6 +114,14 @@ const outroTemplates = [1, 2, 3, 4].map(number => ({
   title: `片尾方案${['一', '二', '三', '四'][number - 1]}`,
 }));
 const allTemplateDefinitions = [...introTemplates, ...outroTemplates];
+
+// The default thumbnails are frames captured from the bundled MP4s. A locally
+// replaced clip instead gets a fresh thumbnail from its own video source.
+const templateThumbnails = import.meta.glob<string>('../templates/thumbnails/*.jpg', { eager: true, query: '?url', import: 'default' });
+const thumbnailPosition: Record<string, number> = {
+  'intro-1': 0.2, 'intro-2': 0.2, 'intro-3': 0.2, 'intro-4': 0.8, 'intro-5': 0.2,
+  'outro-1': 0.5, 'outro-2': 0.8, 'outro-3': 0.5, 'outro-4': 0.5,
+};
 
 type IntroFieldLayout = {
   startSeconds: number;
@@ -432,6 +441,54 @@ export function ExpoVideoComposition({ project, openingClip, endingClip }: { pro
 
 function StageIcon({ stage, number }: { stage: number; number: number }) {
   return <span className={`step-number ${stage === number ? 'current' : stage > number ? 'done' : ''}`}>{stage > number ? <Check size={15} /> : number}</span>;
+}
+
+function TemplateThumbnail({ clip }: { clip?: ClipAsset }) {
+  const [customThumbnail, setCustomThumbnail] = useState<{ src: string; image: string } | null>(null);
+  const [failedSrc, setFailedSrc] = useState('');
+
+  useEffect(() => {
+    if (!clip?.stored) return;
+    let cancelled = false;
+    const video = document.createElement('video');
+    video.muted = true;
+    video.preload = 'auto';
+    const fail = () => { if (!cancelled) setFailedSrc(clip.src); };
+    const timeout = window.setTimeout(fail, 15000);
+    video.onloadedmetadata = () => { video.currentTime = Math.min(clip.durationSeconds * (thumbnailPosition[clip.id] || 0.2), Math.max(0, video.duration - 0.1)); };
+    video.onseeked = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 320;
+        canvas.height = 180;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('無法擷取影片畫格');
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        if (!cancelled) setCustomThumbnail({ src: clip.src, image: canvas.toDataURL('image/jpeg', 0.85) });
+        window.clearTimeout(timeout);
+      } catch { fail(); }
+    };
+    video.onerror = fail;
+    video.src = clip.src;
+    video.load();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      video.onloadedmetadata = null;
+      video.onseeked = null;
+      video.onerror = null;
+      video.removeAttribute('src');
+      video.load();
+    };
+  }, [clip?.id, clip?.src, clip?.stored, clip?.durationSeconds]);
+
+  const image = clip?.stored
+    ? customThumbnail?.src === clip.src ? customThumbnail.image : undefined
+    : clip ? templateThumbnails[`../templates/thumbnails/${clip.id}.jpg`] : undefined;
+  return <div className="template-visual">{image
+    ? <img src={image} alt="" />
+    : <span>{!clip ? '尚未載入影片' : failedSrc === clip.src ? '無法顯示縮圖，請點選播放影片' : '正在載入影片縮圖…'}</span>}
+  </div>;
 }
 
 export default function App() {
@@ -841,11 +898,11 @@ export default function App() {
             <div className="stage-actions"><button className="button primary" onClick={() => go(2)}>選擇片頭 <ArrowRight size={17} /></button></div>
           </section>}
 
-          {stage === 2 && <section className="stage-panel"><div className="panel-kicker">STEP 02 · ORIGINAL OPENING CLIPS</div><h1>選擇原始片頭影片</h1><p className="lead">以下五支均為你提供的 MP4 原始影片，會完整放進預覽與最終匯出檔。</p>
+          {stage === 2 && <section className="stage-panel"><div className="panel-kicker">STEP 02 · ORIGINAL OPENING CLIPS</div><h1>選擇原始片頭影片</h1><p className="lead">縮圖擷取自原始 MP4；點選方案可播放完整影片。預覽與最終匯出會套用目前領域名稱。</p>
             <div className="template-grid intro-grid">{templateList('intro').map(item => {
               const clip = findClip(item.id);
-              return <button className={`template-card ${project.intro === item.id ? 'selected' : ''}`} key={item.id} disabled={!clip} onClick={() => { update(current => ({ ...current, intro: item.id })); setPreviewTemplateId(item.id); }}>
-                <div className="template-visual real-template"><span className="template-overline">ORIGINAL MP4 · INTRO</span><b>片頭<br />方案{['一', '二', '三', '四', '五'][item.number - 1]}</b><span className="template-id">0{item.number}</span></div>
+              return <button className={`template-card ${project.intro === item.id ? 'selected' : ''}`} key={item.id} disabled={!clip} aria-pressed={project.intro === item.id} onClick={() => { update(current => ({ ...current, intro: item.id })); setPreviewTemplateId(item.id); }}>
+                <TemplateThumbnail clip={clip} />
                 <span className="template-caption"><strong>{item.title}</strong><small>{clip ? `${clip.durationSeconds.toFixed(2)} 秒 · H.264 MP4${clip.stored ? ' · 本機匯入' : ' · 預載模板'}` : '尚未載入此影片'}</small></span>
                 {project.intro === item.id && <span className="selected-check"><Check size={14} /></span>}
               </button>;
@@ -870,11 +927,11 @@ export default function App() {
             <div className="stage-actions spread"><button className="button secondary" onClick={() => go(2)}><ArrowLeft size={16} /> 上一步</button><button className="button primary" onClick={() => go(4)}>選擇片尾 <ArrowRight size={17} /></button></div>
           </section>}
 
-          {stage === 4 && <section className="stage-panel"><div className="panel-kicker">STEP 04 · ORIGINAL CLOSING CLIPS</div><h1>選擇原始片尾影片</h1><p className="lead">四支片尾均為你提供的原始 MP4，會接在此領域作品之後並保留原音訊。</p>
+          {stage === 4 && <section className="stage-panel"><div className="panel-kicker">STEP 04 · ORIGINAL CLOSING CLIPS</div><h1>選擇原始片尾影片</h1><p className="lead">縮圖擷取自原始 MP4；點選方案可播放完整影片。片尾會接在作品之後並保留原音訊。</p>
             <div className="template-grid outro-grid">{templateList('outro').map(item => {
               const clip = findClip(item.id);
-              return <button className={`template-card ${project.outro === item.id ? 'selected' : ''}`} key={item.id} disabled={!clip} onClick={() => { update(current => ({ ...current, outro: item.id })); setPreviewTemplateId(item.id); }}>
-                <div className="template-visual real-template outro-template"><span className="template-overline">ORIGINAL MP4 · OUTRO</span><b>片尾<br />方案{['一', '二', '三', '四'][item.number - 1]}</b><span className="template-id">0{item.number}</span></div>
+              return <button className={`template-card ${project.outro === item.id ? 'selected' : ''}`} key={item.id} disabled={!clip} aria-pressed={project.outro === item.id} onClick={() => { update(current => ({ ...current, outro: item.id })); setPreviewTemplateId(item.id); }}>
+                <TemplateThumbnail clip={clip} />
                 <span className="template-caption"><strong>{item.title}</strong><small>{clip ? `${clip.durationSeconds.toFixed(2)} 秒 · H.264 MP4${clip.stored ? ' · 本機匯入' : ' · 預載模板'}` : '尚未載入此影片'}</small></span>
                 {project.outro === item.id && <span className="selected-check"><Check size={14} /></span>}
               </button>;
