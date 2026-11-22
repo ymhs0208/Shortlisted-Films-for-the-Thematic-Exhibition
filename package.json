@@ -1,0 +1,31 @@
+{
+  "name": "thematic-exhibition-motion-studio",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/prepare-vite-public.mjs && vite --host 0.0.0.0",
+    "build": "node scripts/prepare-vite-public.mjs && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test",
+    "embed-templates": "node scripts/embed-local-templates.mjs"
+  },
+  "dependencies": {
+    "@remotion/media": "^4.0.545",
+    "@remotion/player": "^4.0.545",
+    "@remotion/web-renderer": "^4.0.545",
+    "lucide-react": "^1.77.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "remotion": "^4.0.545"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.8"
+  }
+}
