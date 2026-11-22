@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import brandIcon from '../../favicon.png';
 import { Video } from '@remotion/media';
 import { Player } from '@remotion/player';
 import { canRenderMediaOnWeb, renderMediaOnWeb } from '@remotion/web-renderer';
@@ -144,10 +145,10 @@ type IntroFieldLayout = {
 // Clips 2–5 have a baked-in "企業智慧化" title; their opaque plates replace that line.
 const introFieldLayouts: Record<string, IntroFieldLayout> = {
   'intro-1': { startSeconds: 0.7, endSeconds: 2.4, left: 21, top: 85.5, width: 58, height: 12.5, background: 'rgba(4, 13, 27, 0.72)', color: '#fff8e8', fontSize: 72, border: '1px solid rgba(214, 182, 110, 0.82)', borderRadius: 30, shadow: '0 8px 32px rgba(0,0,0,0.48)' },
-  'intro-2': { startSeconds: 6.65, endSeconds: 10, left: 20, top: 36, width: 60, height: 27, background: '#07172f', color: '#f7c932', fontSize: 90, border: '1px solid rgba(242, 206, 108, 0.68)', borderRadius: 20, shadow: '0 0 28px rgba(0,0,0,0.42)', replacesEmbeddedTitle: true },
-  'intro-3': { startSeconds: 6.15, endSeconds: 9.1, left: 30, top: 54, width: 45, height: 16, background: '#081a2c', color: '#ffd13a', fontSize: 66, border: '1px solid rgba(117, 201, 247, 0.42)', borderRadius: 12, shadow: '0 8px 30px rgba(0,0,0,0.4)', replacesEmbeddedTitle: true },
-  'intro-4': { startSeconds: 9.93, endSeconds: 12.57, left: 21, top: 38, width: 58, height: 22, background: '#ffefcd', color: '#073e75', fontSize: 86, border: '0 solid transparent', borderRadius: 0, shadow: 'none', replacesEmbeddedTitle: true },
-  'intro-5': { startSeconds: 6.55, endSeconds: 10, left: 32, top: 75.5, width: 44, height: 15, background: '#1b1d28', color: '#fff9e8', fontSize: 64, border: '1px solid rgba(240, 215, 160, 0.62)', borderRadius: 14, shadow: '0 8px 30px rgba(0,0,0,0.4)', replacesEmbeddedTitle: true },
+  'intro-2': { startSeconds: 7.5, endSeconds: 10.2, left: 20, top: 36, width: 60, height: 27, background: '#07172f', color: '#f7c932', fontSize: 90, border: '1px solid rgba(242, 206, 108, 0.68)', borderRadius: 20, shadow: '0 0 28px rgba(0,0,0,0.42)', replacesEmbeddedTitle: true },
+  'intro-3': { startSeconds: 7.5, endSeconds: 10.2, left: 30, top: 54, width: 45, height: 16, background: '#081a2c', color: '#ffd13a', fontSize: 66, border: '1px solid rgba(117, 201, 247, 0.42)', borderRadius: 12, shadow: '0 8px 30px rgba(0,0,0,0.4)', replacesEmbeddedTitle: true },
+  'intro-4': { startSeconds: 10, endSeconds: 13.6, left: 21, top: 38, width: 58, height: 22, background: '#ffefcd', color: '#073e75', fontSize: 86, border: '0 solid transparent', borderRadius: 0, shadow: 'none', replacesEmbeddedTitle: true },
+  'intro-5': { startSeconds: 6.55, endSeconds: 10.2, left: 32, top: 75.5, width: 44, height: 15, background: '#1b1d28', color: '#fff9e8', fontSize: 64, border: '1px solid rgba(240, 215, 160, 0.62)', borderRadius: 14, shadow: '0 8px 30px rgba(0,0,0,0.4)', replacesEmbeddedTitle: true },
 };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -418,11 +419,6 @@ export function ExpoVideoComposition({ project, openingClip, endingClip }: { pro
     <AbsoluteFill style={{ backgroundColor: '#07152d', overflow: 'hidden' }}>
       <Sequence from={0} durationInFrames={openingFrames} name="原始片頭">
         <Video src={openingClip.src} durationInFrames={openingFrames} style={{ width: '100%', height: '100%', objectFit: 'cover' }} volume={1} />
-        {/* Intro 4's baked-in title briefly zooms across the screen before settling.
-            Hide only that short entrance, then keep the smaller title-line plate. */}
-        {openingClip.id === 'intro-4' && <Sequence from={Math.round(9.93 * fps)} durationInFrames={Math.round((10.4 - 9.93) * fps)} name="片頭四舊標題進場遮罩">
-          <div style={{ position: 'absolute', left: 0, top: '15%', width: '100%', height: '65%', background: '#ffefcd' }} />
-        </Sequence>}
         {fieldLayout && overlayDuration > 0 && <Sequence from={overlayStart} durationInFrames={overlayDuration} name="片頭領域名稱">
           <IntroFieldOverlay project={project} layout={fieldLayout} durationInFrames={overlayDuration} />
         </Sequence>}
@@ -826,7 +822,7 @@ export default function App() {
     <div className="app-shell min-h-screen antialiased">
       <header className="studio-header">
         <button type="button" className="exhibition-brand video-brand" onClick={() => setProject(null)} aria-label="返回影片專案首頁">
-          <img className="brand-icon" src="../favicon.png" alt="" />
+          <img className="brand-icon" src={brandIcon} alt="" />
           <span className="exhibition-brand-copy">
             <span className="exhibition-affiliation">國立臺中科技大學</span>
             <span className="exhibition-title">專題成果展</span>

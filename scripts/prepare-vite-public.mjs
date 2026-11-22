@@ -13,11 +13,11 @@ await mkdir(templateTarget, { recursive: true });
 await cp(join(root, 'video-studio', 'templates'), templateTarget, { recursive: true });
 const templateManifest = {
   intros: [
-    { id: 'intro-1', filename: 'intro-1.mp4', durationSeconds: 24.2 },
-    { id: 'intro-2', filename: 'intro-2.mp4', durationSeconds: 24.106 },
-    { id: 'intro-3', filename: 'intro-3.mp4', durationSeconds: 24.106 },
-    { id: 'intro-4', filename: 'intro-4.mp4', durationSeconds: 23.36 },
-    { id: 'intro-5', filename: 'intro-5.mp4', durationSeconds: 24.128 },
+    { id: 'intro-1', filename: 'intro-1.mp4', durationSeconds: 10.133333 },
+    { id: 'intro-2', filename: 'intro-2.mp4', durationSeconds: 10.033333 },
+    { id: 'intro-3', filename: 'intro-3.mp4', durationSeconds: 10.033333 },
+    { id: 'intro-4', filename: 'intro-4.mp4', durationSeconds: 13.504 },
+    { id: 'intro-5', filename: 'intro-5.mp4', durationSeconds: 10.048 },
   ],
   outros: [
     { id: 'outro-1', filename: 'outro-1.mp4', durationSeconds: 10.033333 },
