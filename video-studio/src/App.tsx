@@ -639,7 +639,6 @@ export default function App() {
   const [galleryCount, setGalleryCount] = useState(0);
   const [clipAssets, setClipAssets] = useState<ClipAsset[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saved, setSaved] = useState(true);
   const [rendering, setRendering] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
@@ -726,11 +725,9 @@ export default function App() {
 
   useEffect(() => {
     if (!project) return;
-    setSaved(false);
     const timeout = window.setTimeout(() => {
       const next = { ...project, updatedAt: Date.now() };
       putProject(next).then(() => {
-        setSaved(true);
         refresh();
       }).catch(caught => setError(caught instanceof Error ? caught.message : '自動儲存失敗，請確認瀏覽器儲存空間。'));
     }, 450);
@@ -1030,7 +1027,6 @@ export default function App() {
         <div className={`header-actions${project ? ' has-project-tools' : ''}`}>
           {project && <>
             <div className="project-crumb"><span>/</span><button onClick={() => setProject(null)}>我的專案</button><span>/</span><button className="crumb-current" onClick={rename}>{project.name}</button></div>
-            <div className="save-state"><span className={saved ? 'dot' : 'dot busy'} />{saved ? '已儲存至此裝置' : '儲存中…'}</div>
           </>}
           <a className="guide-link" href="../index.html" aria-label="返回海報製作室"><ArrowLeft size={16} />海報製作室</a>
         </div>
