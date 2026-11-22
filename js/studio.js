@@ -743,6 +743,39 @@ function download(blob, name) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 20000);
 }
+function blobDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error || Error('無法讀取海報圖片'));
+    reader.readAsDataURL(blob);
+  });
+}
+$('exportVideoData').onclick = () => runOperation($('exportVideoData'), '正在準備影片資料…', async setLabel => {
+  try {
+    const exportRecords = withoutStarterRecords(records);
+    if (!exportRecords.length) throw Error('目前沒有可匯出的專題資料');
+    const rows = [];
+    for (const [index, record] of exportRecords.entries()) {
+      setLabel(`正在整理圖片 ${index + 1} / ${exportRecords.length}`);
+      let imageDataUrl = '';
+      if (record.imageSource !== 'demo' && record.imageBlob instanceof Blob) imageDataUrl = await blobDataUrl(record.imageBlob);
+      else if (record.imageSource !== 'demo' && typeof record.image?.src === 'string' && record.image.src.startsWith('data:image/')) imageDataUrl = record.image.src;
+      rows.push({ code: record.code, name: record.name, className: record.className, filename: record.filename || '', imageDataUrl });
+    }
+    const payload = {
+      format: 'expo-motion-poster-records',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      domains: DOMAINS.map(([code, name]) => ({ code, name })),
+      records: rows,
+    };
+    download(new Blob([JSON.stringify(payload)], { type: 'application/json;charset=utf-8' }), '海報入圍作品_影片匯入.json');
+    toast(`已匯出 ${rows.length} 筆專題資料與可用海報圖片；可在影片工作室匯入 JSON`);
+  } catch (error) {
+    toast(error.message || '匯出影片資料失敗');
+  }
+});
 $('sample').onclick = () => download(new Blob(['\uFEFF編號,名稱,班級,海報檔名\r\n'], { type: 'text/csv;charset=utf-8' }), '海報匯入範本.csv');
 
 function validate(record) {
