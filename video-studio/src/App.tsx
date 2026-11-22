@@ -1,11 +1,13 @@
 /// <reference types="vite/client" />
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import brandIcon from '../../favicon.png';
-import { Video } from '@remotion/media';
+import { Audio, Video } from '@remotion/media';
 import { Player } from '@remotion/player';
+import type { PlayerRef } from '@remotion/player';
 import { canRenderMediaOnWeb, renderMediaOnWeb } from '@remotion/web-renderer';
 import { AbsoluteFill, interpolate, Sequence, useCurrentFrame } from 'remotion';
 import { getPosterTemplate, renderPosterCanvas } from '../../js/poster-renderer.js';
+import shortlistedMusicUrl from '../assets/shortlisted-background.m4a?url';
 import {
   ArrowLeft,
   ArrowRight,
@@ -47,7 +49,10 @@ type Project = {
   subtitle: string;
   activity: string;
   domains: string[];
+  titleAnimations?: Record<string, string>;
   transition: string;
+  transitionRepeatEvery: number;
+  cardDurationSeconds: number;
   cards: Card[];
   sourceDomainCode?: string;
 };
@@ -92,7 +97,11 @@ const POSTER_KEY = 'app';
 const fps = 30;
 const W = 1920;
 const H = 1080;
-const framesPerCard = 90;
+const defaultCardDurationSeconds = 3;
+const minCardDurationSeconds = 1;
+const maxCardDurationSeconds = 30;
+const defaultTransitionRepeatEvery = 1;
+const maxTransitionRepeatEvery = 30;
 const domains = [
   ['A', '企業智慧化'],
   ['B', '數位內容與多媒體應用'],
@@ -102,6 +111,34 @@ const domains = [
   ['F', '智慧流通應用與研究'],
   ['N', '進修部'],
 ] as const;
+const transitionOptions = [
+  { id: 'fade', value: '淡入淡出', description: '柔和淡入、淡出' },
+  { id: 'slide', value: '滑動切換', description: '從右側滑入' },
+  { id: 'zoom', value: '柔和縮放', description: '由小放大進場' },
+  { id: 'direct', value: '直接切換', description: '俐落快速換頁' },
+  { id: 'wipe', value: '遮罩推進', description: '由左向右揭示' },
+  { id: 'blur', value: '模糊溶解', description: '清晰與柔焦交替' },
+  { id: 'vertical', value: '垂直滑入', description: '由下往上帶入' },
+  { id: 'flip', value: '立體翻轉', description: '以 3D 翻面轉場' },
+] as const;
+const introTitleAnimationOptions = [
+  { id: 'rise', name: '淡入上浮', description: '輕柔浮現', symbol: '↑' },
+  { id: 'tracking', name: '字距收束', description: '科技感聚合', symbol: '↔' },
+  { id: 'slide', name: '橫向滑入', description: '俐落帶入', symbol: '→' },
+  { id: 'wipe', name: '光幕揭示', description: '由左展開', symbol: '▰' },
+  { id: 'zoom', name: '聚焦放大', description: '主視覺聚焦', symbol: '⊕' },
+  { id: 'typewriter', name: '逐字顯現', description: '依序呈現', symbol: 'Aa' },
+] as const;
+type IntroTitleAnimationId = typeof introTitleAnimationOptions[number]['id'];
+type TitleDemoStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'done' | 'error';
+type BusyAction = 'poster-import' | 'json-import' | 'template-upload' | null;
+const introTitleAnimationRecommendations: Record<string, { animationId: IntroTitleAnimationId; reason: string }> = {
+  'intro-1': { animationId: 'rise', reason: '配合地球主視覺，讓領域標題輕柔浮現' },
+  'intro-2': { animationId: 'tracking', reason: '配合星空與科技線條，讓字距聚合成形' },
+  'intro-3': { animationId: 'slide', reason: '配合太空場景節奏，俐落帶入標題' },
+  'intro-4': { animationId: 'wipe', reason: '配合淺色極簡畫面，清楚揭示文字' },
+  'intro-5': { animationId: 'zoom', reason: '配合獎盃與煙火主視覺，聚焦領域名稱' },
+};
 const introTemplates = [1, 2, 3, 4, 5].map(number => ({
   id: `intro-${number}`,
   number,
@@ -155,6 +192,24 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const domainForCode = (code: string) => domains.find(([prefix]) => prefix === String(code || '').trim().charAt(0).toUpperCase());
 const domainName = (code: string) => domainForCode(code)?.[1] || '未分類';
 const safeFileName = (name: string) => name.replace(/[\\/:*?"<>|]/g, '_').trim() || '專題展影片';
+const getCardDurationSeconds = (value?: number) => {
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds > 0
+    ? Math.min(maxCardDurationSeconds, Math.max(minCardDurationSeconds, seconds))
+    : defaultCardDurationSeconds;
+};
+const getCardDurationInFrames = (value?: number) => Math.round(getCardDurationSeconds(value) * fps);
+const getTransitionRepeatEvery = (value?: number) => {
+  const count = Number(value);
+  return Number.isFinite(count) && count > 0
+    ? Math.min(maxTransitionRepeatEvery, Math.max(1, Math.round(count)))
+    : defaultTransitionRepeatEvery;
+};
+const getIntroTitleAnimationId = (project: Project, introId = project.intro): IntroTitleAnimationId => {
+  const saved = project.titleAnimations?.[introId];
+  if (introTitleAnimationOptions.some(option => option.id === saved)) return saved as IntroTitleAnimationId;
+  return introTitleAnimationRecommendations[introId]?.animationId || 'rise';
+};
 
 function openStudioDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -233,6 +288,8 @@ function makeProject(name: string, categoryCode?: string, cards: Card[] = []): P
     activity: '國立臺中科技大學｜專題成果展',
     domains: [label],
     transition: '淡入淡出',
+    transitionRepeatEvery: defaultTransitionRepeatEvery,
+    cardDurationSeconds: defaultCardDurationSeconds,
     cards,
     sourceDomainCode: categoryCode,
   };
@@ -355,19 +412,53 @@ function publicManifest(): Promise<TemplateManifest | null> {
     .catch(() => null);
 }
 
-function CardScene({ card, index, total, transition }: { card: Card; index: number; total: number; transition: string }) {
+function TransitionThumbnail({ option }: { option: typeof transitionOptions[number] }) {
+  return (
+    <div className={`transition-thumbnail effect-${option.id}`} aria-hidden="true">
+      <div className="transition-frame">
+        <div className="transition-sample-card before"><span>02</span><b>作品 A</b></div>
+        <div className="transition-sample-card after"><span>03</span><b>作品 B</b></div>
+        <span className="transition-direction">{option.id === 'vertical' ? '↑' : option.id === 'flip' ? '↻' : '→'}</span>
+      </div>
+      <span className="transition-caption"><strong>{option.value}</strong><small>{option.description}</small></span>
+    </div>
+  );
+}
+
+function CardScene({ card, index, total, transition, durationInFrames }: { card: Card; index: number; total: number; transition: string; durationInFrames: number }) {
   const frame = useCurrentFrame();
-  const fade = interpolate(frame, [0, 10, 78, 89], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const fadeInFrames = Math.min(Math.round(fps * 0.35), Math.max(1, Math.floor(durationInFrames / 4)));
+  const fadeOutFrames = fadeInFrames;
+  const enterFrames = Math.min(12, Math.max(1, Math.floor(durationInFrames / 4)));
+  const exitStart = durationInFrames - fadeOutFrames - 1;
+  const fade = interpolate(frame, [0, fadeInFrames, exitStart, durationInFrames - 1], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const showRenderedPoster = Boolean(card.image && card.isRenderedPoster);
+  const enter = interpolate(frame, [0, enterFrames], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const exit = interpolate(frame, [exitStart, durationInFrames - 1], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const transform = transition === '滑動切換'
-    ? `translateX(${interpolate(frame, [0, 12], [80, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })}px)`
-    : transition === '柔和縮放'
-      ? `scale(${interpolate(frame, [0, 12], [0.93, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })})`
-      : 'none';
+    ? `translateX(${interpolate(frame, [0, enterFrames], [80, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })}px)`
+      : transition === '柔和縮放'
+        ? `scale(${interpolate(frame, [0, enterFrames], [0.93, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })})`
+        : transition === '垂直滑入'
+          ? `translateY(${interpolate(frame, [0, enterFrames], [80, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })}px)`
+          : transition === '立體翻轉'
+            ? `perspective(1000px) rotateY(${interpolate(frame, [0, enterFrames, exitStart, durationInFrames - 1], [-70, 0, 0, 55], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })}deg)`
+            : 'none';
+  const opacity = transition === '直接切換' || transition === '遮罩推進'
+    ? 1
+    : transition === '立體翻轉'
+      ? interpolate(frame, [0, enterFrames, exitStart, durationInFrames - 1], [0.2, 1, 1, 0.2], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+      : fade;
+  const clipPath = transition === '遮罩推進'
+    ? `inset(0 ${frame >= exitStart ? exit * 100 : 100 - enter * 100}% 0 0)`
+    : undefined;
+  const filter = transition === '模糊溶解'
+    ? `blur(${interpolate(frame, [0, enterFrames, exitStart, durationInFrames - 1], [12, 0, 0, 12], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })}px)`
+    : undefined;
   return (
     <AbsoluteFill style={{ background: '#07152d', color: '#fff', fontFamily: 'Arial, "Noto Sans TC", sans-serif', overflow: 'hidden' }}>
       {card.image && !showRenderedPoster && <img src={card.image} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.24 }} />}
-      <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', padding: 90, textAlign: 'center', opacity: transition === '直接切換' ? 1 : fade, transform }}>
+      <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', padding: 90, textAlign: 'center', opacity, transform, clipPath, filter, transformOrigin: transition === '立體翻轉' ? 'left center' : undefined }}>
         {showRenderedPoster && <img src={card.image} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', background: '#fff' }} />}
         {!showRenderedPoster && <>
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #101f3d99, #07152d33)' }} />
@@ -383,7 +474,7 @@ function CardScene({ card, index, total, transition }: { card: Card; index: numb
   );
 }
 
-function IntroFieldOverlay({ project, layout, durationInFrames }: { project: Project; layout: IntroFieldLayout; durationInFrames: number }) {
+function IntroFieldOverlay({ project, layout, durationInFrames, animationId }: { project: Project; layout: IntroFieldLayout; durationInFrames: number; animationId: IntroTitleAnimationId }) {
   const frame = useCurrentFrame();
   const domain = project.domains[0] || (project.sourceDomainCode ? domainName(project.sourceDomainCode) : '專題成果展');
   const fieldName = project.sourceDomainCode ? `${project.sourceDomainCode}｜${domain}` : domain;
@@ -399,35 +490,75 @@ function IntroFieldOverlay({ project, layout, durationInFrames }: { project: Pro
   const fontSize = Math.min(layout.fontSize, widthLimitedFontSize, heightLimitedFontSize);
   const fadeFrames = Math.min(7, Math.floor(durationInFrames / 4));
   const opacity = layout.replacesEmbeddedTitle ? 1 : interpolate(frame, [0, fadeFrames, durationInFrames - fadeFrames, durationInFrames], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const animationFrames = Math.min(24, Math.max(10, Math.floor(durationInFrames / 3)));
+  const progress = interpolate(frame, [0, animationFrames], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const titleOpacity = animationId === 'typewriter' ? 1 : progress;
+  const titleTransform = animationId === 'rise'
+    ? `translateY(${(1 - progress) * 36}px)`
+    : animationId === 'slide'
+      ? `translateX(${(1 - progress) * 70}px)`
+      : animationId === 'zoom'
+        ? `scale(${0.72 + progress * 0.28})`
+        : `translateY(${(1 - progress) * 5}px)`;
+  const titleClipPath = animationId === 'wipe' ? `inset(0 ${(1 - progress) * 100}% 0 0)` : undefined;
+  const animatedLetterSpacing = animationId === 'tracking'
+    ? interpolate(frame, [0, animationFrames], [Math.max(18, letterSpacing + 12), letterSpacing], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+    : letterSpacing;
+  const characterStep = Math.max(1, Math.floor(animationFrames / Math.max(1, chars.length)));
   return (
     <div style={{ position: 'absolute', left: `${layout.left}%`, top: `${layout.top}%`, width: `${layout.width}%`, height: `${layout.height}%`, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: layout.overline ? 5 : 0, padding: layout.width < 35 ? '8px 16px' : '12px 28px', overflow: 'hidden', background: layout.background, color: layout.color, border: layout.border, borderRadius: layout.borderRadius, boxShadow: layout.shadow, opacity, fontFamily: 'Arial, "Noto Sans TC", sans-serif', textAlign: 'center' }}>
       {layout.overline && <span style={{ fontSize: Math.max(14, fontSize * 0.38), fontWeight: 600, letterSpacing: 4, lineHeight: 1.1, opacity: 0.78 }}>本片領域</span>}
-      <span style={{ fontSize, fontWeight: 800, lineHeight: 1.2, letterSpacing, whiteSpace: 'nowrap', textShadow: layout.background.startsWith('rgba') ? '0 2px 12px rgba(0,0,0,0.28)' : 'none' }}>{fieldName}</span>
+      <span aria-label={fieldName} style={{ display: 'inline-flex', fontSize, fontWeight: 800, lineHeight: 1.2, letterSpacing: animatedLetterSpacing, whiteSpace: 'nowrap', textShadow: layout.background.startsWith('rgba') ? '0 2px 12px rgba(0,0,0,0.28)' : 'none', opacity: titleOpacity, transform: titleTransform, clipPath: titleClipPath }}>
+        {animationId === 'typewriter' ? chars.map((char, index) => {
+          const characterProgress = interpolate(frame, [index * characterStep, (index + 1) * characterStep], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+          return <span key={`${char}-${index}`} style={{ opacity: characterProgress, transform: `translateY(${(1 - characterProgress) * 5}px)` }}>{char}</span>;
+        }) : fieldName}
+      </span>
     </div>
+  );
+}
+
+function IntroTitlePreviewComposition({ project, openingClip, animationId }: { project: Project; openingClip: ClipAsset; animationId: IntroTitleAnimationId }) {
+  const fieldLayout = introFieldLayouts[openingClip.id];
+  const overlayStart = fieldLayout ? Math.min(openingClip.durationInFrames, Math.round(fieldLayout.startSeconds * fps)) : openingClip.durationInFrames;
+  const overlayEnd = fieldLayout ? Math.min(openingClip.durationInFrames, Math.round(fieldLayout.endSeconds * fps)) : openingClip.durationInFrames;
+  const overlayDuration = Math.max(0, overlayEnd - overlayStart);
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#07152d', overflow: 'hidden' }}>
+      <Video src={openingClip.src} durationInFrames={openingClip.durationInFrames} style={{ width: '100%', height: '100%', objectFit: 'cover' }} volume={1} />
+      {fieldLayout && overlayDuration > 0 && <Sequence from={overlayStart} durationInFrames={overlayDuration} name="片頭領域名稱">
+        <IntroFieldOverlay project={project} layout={fieldLayout} durationInFrames={overlayDuration} animationId={animationId} />
+      </Sequence>}
+    </AbsoluteFill>
   );
 }
 
 export function ExpoVideoComposition({ project, openingClip, endingClip }: { project: Project; openingClip: ClipAsset; endingClip: ClipAsset }) {
   const openingFrames = openingClip.durationInFrames;
   const cardsStart = openingFrames;
-  const endingStart = cardsStart + project.cards.length * framesPerCard;
-  const fieldLayout = introFieldLayouts[openingClip.id];
-  const overlayStart = fieldLayout ? Math.min(openingFrames, Math.round(fieldLayout.startSeconds * fps)) : openingFrames;
-  const overlayEnd = fieldLayout ? Math.min(openingFrames, Math.round(fieldLayout.endSeconds * fps)) : openingFrames;
-  const overlayDuration = Math.max(0, overlayEnd - overlayStart);
+  const cardDurationInFrames = getCardDurationInFrames(project.cardDurationSeconds);
+  const cardsDurationInFrames = project.cards.length * cardDurationInFrames;
+  const endingStart = cardsStart + cardsDurationInFrames;
+  const musicFadeFrames = Math.min(Math.round(fps * 1.2), Math.floor(cardsDurationInFrames / 4));
+  const transitionRepeatEvery = getTransitionRepeatEvery(project.transitionRepeatEvery);
+  const titleAnimationId = getIntroTitleAnimationId(project, openingClip.id);
   return (
     <AbsoluteFill style={{ backgroundColor: '#07152d', overflow: 'hidden' }}>
       <Sequence from={0} durationInFrames={openingFrames} name="原始片頭">
-        <Video src={openingClip.src} durationInFrames={openingFrames} style={{ width: '100%', height: '100%', objectFit: 'cover' }} volume={1} />
-        {fieldLayout && overlayDuration > 0 && <Sequence from={overlayStart} durationInFrames={overlayDuration} name="片頭領域名稱">
-          <IntroFieldOverlay project={project} layout={fieldLayout} durationInFrames={overlayDuration} />
-        </Sequence>}
+        <IntroTitlePreviewComposition project={project} openingClip={openingClip} animationId={titleAnimationId} />
       </Sequence>
       {project.cards.map((card, index) => (
-        <Sequence key={card.id} from={cardsStart + index * framesPerCard} durationInFrames={framesPerCard} name={`作品 ${index + 1}`}>
-          <CardScene card={card} index={index} total={project.cards.length} transition={project.transition} />
+        <Sequence key={card.id} from={cardsStart + index * cardDurationInFrames} durationInFrames={cardDurationInFrames} name={`作品 ${index + 1}`}>
+          <CardScene card={card} index={index} total={project.cards.length} transition={index % transitionRepeatEvery === 0 ? project.transition : '直接切換'} durationInFrames={cardDurationInFrames} />
         </Sequence>
       ))}
+      {cardsDurationInFrames > 0 && <Sequence from={cardsStart} durationInFrames={cardsDurationInFrames} name="入圍作品背景音樂">
+        <Audio
+          src={shortlistedMusicUrl}
+          loop
+          volume={frame => interpolate(frame, [0, musicFadeFrames, cardsDurationInFrames - musicFadeFrames, cardsDurationInFrames - 1], [0, 0.35, 0.35, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })}
+        />
+      </Sequence>}
       <Sequence from={endingStart} durationInFrames={endingClip.durationInFrames} name="原始片尾">
         <Video src={endingClip.src} durationInFrames={endingClip.durationInFrames} style={{ width: '100%', height: '100%', objectFit: 'cover' }} volume={1} />
       </Sequence>
@@ -487,6 +618,20 @@ function TemplateThumbnail({ clip }: { clip?: ClipAsset }) {
   </div>;
 }
 
+function IntroTitleAnimationThumbnail({ option, clip, layout }: { option: typeof introTitleAnimationOptions[number]; clip?: ClipAsset; layout: IntroFieldLayout }) {
+  const image = clip && !clip.stored ? templateThumbnails[`../templates/thumbnails/${clip.id}.jpg`] : undefined;
+  const textFontSize = Math.min(11, Math.max(5, 120 * layout.width / 100 / '領域名稱'.length));
+  return <>
+    <div className={`title-animation-thumbnail sample-${option.id}`} style={image ? { backgroundImage: `linear-gradient(130deg, #07152d45, #07152d16), url("${image}")` } : undefined}>
+      <div className="title-animation-sample-plate" style={{ left: `${layout.left}%`, top: `${layout.top}%`, width: `${layout.width}%`, height: `${layout.height}%`, background: layout.background, color: layout.color, border: layout.border, borderRadius: layout.borderRadius, boxShadow: layout.shadow, fontSize: textFontSize }}>
+        <span className={`title-animation-sample-text sample-${option.id}`}>領域名稱</span>
+      </div>
+      <span className="title-animation-symbol" aria-hidden="true">{option.symbol}</span>
+    </div>
+    <span className="title-animation-caption"><strong>{option.name}</strong><small>{option.description}</small></span>
+  </>;
+}
+
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [project, setProject] = useState<Project | null>(null);
@@ -498,9 +643,15 @@ export default function App() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [previewTemplateId, setPreviewTemplateId] = useState('');
+  const [titleDemoRevision, setTitleDemoRevision] = useState(0);
+  const [titleDemoIntroId, setTitleDemoIntroId] = useState('');
+  const [titleDemoStatus, setTitleDemoStatus] = useState<TitleDemoStatus>('idle');
+  const [busyAction, setBusyAction] = useState<BusyAction>(null);
+  const [busyProgress, setBusyProgress] = useState({ completed: 0, total: 0 });
   const uploadRef = useRef<HTMLInputElement>(null);
   const clipUploadRef = useRef<HTMLInputElement>(null);
   const jsonImportRef = useRef<HTMLInputElement>(null);
+  const titleDemoPlayerRef = useRef<PlayerRef>(null);
   const clipUrlsRef = useRef(new Map<string, string>());
 
   const refresh = useCallback(async () => {
@@ -510,6 +661,12 @@ export default function App() {
       setError(caught instanceof Error ? caught.message : '無法讀取影片專案。');
     }
   }, []);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(''), 3000);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
 
   useEffect(() => {
     let cancelled = false;
@@ -577,18 +734,62 @@ export default function App() {
     clipUrlsRef.current.clear();
   }, []);
 
+  useEffect(() => {
+    const player = titleDemoPlayerRef.current;
+    if (!player || titleDemoRevision === 0 || !titleDemoIntroId) return;
+    const onPlay = () => setTitleDemoStatus('playing');
+    const onPause = () => setTitleDemoStatus(current => current === 'done' ? 'done' : 'paused');
+    const onEnded = () => setTitleDemoStatus('done');
+    const onWaiting = () => setTitleDemoStatus('loading');
+    const onResume = () => setTitleDemoStatus(player.isPlaying() ? 'playing' : 'paused');
+    const onError = () => setTitleDemoStatus('error');
+    player.addEventListener('play', onPlay);
+    player.addEventListener('pause', onPause);
+    player.addEventListener('ended', onEnded);
+    player.addEventListener('waiting', onWaiting);
+    player.addEventListener('resume', onResume);
+    player.addEventListener('error', onError);
+    if (player.isPlaying()) setTitleDemoStatus('playing');
+    return () => {
+      player.removeEventListener('play', onPlay);
+      player.removeEventListener('pause', onPause);
+      player.removeEventListener('ended', onEnded);
+      player.removeEventListener('waiting', onWaiting);
+      player.removeEventListener('resume', onResume);
+      player.removeEventListener('error', onError);
+    };
+  }, [titleDemoIntroId, titleDemoRevision]);
+
   const update = (fn: (current: Project) => Project) => setProject(current => current ? fn(current) : current);
-  const go = (stage: number) => update(current => ({ ...current, stage }));
+  const go = (stage: number) => {
+    if (stage !== 3) { setTitleDemoRevision(0); setTitleDemoIntroId(''); setTitleDemoStatus('idle'); }
+    update(current => ({ ...current, stage }));
+  };
   const findClip = (id: string) => clipAssets.find(clip => clip.id === id);
   const selectedOpening = project ? findClip(project.intro) : undefined;
   const selectedEnding = project ? findClip(project.outro) : undefined;
+  const selectedTitleAnimation = project ? getIntroTitleAnimationId(project) : 'rise';
+  const recommendedTitleAnimation = project ? introTitleAnimationRecommendations[project.intro] : undefined;
+  const chooseTitleAnimation = (animationId: IntroTitleAnimationId) => {
+    update(current => ({ ...current, titleAnimations: { ...current.titleAnimations, [current.intro]: animationId } }));
+    setTitleDemoIntroId(project?.intro || '');
+    setTitleDemoStatus('loading');
+    setTitleDemoRevision(revision => revision + 1);
+  };
+  const replayTitleDemo = () => {
+    setTitleDemoStatus('loading');
+    setTitleDemoRevision(revision => revision + 1);
+  };
   const duration = useMemo(() => {
     if (!project || !selectedOpening || !selectedEnding) return 0;
-    return selectedOpening.durationInFrames + project.cards.length * framesPerCard + selectedEnding.durationInFrames;
+    return selectedOpening.durationInFrames + project.cards.length * getCardDurationInFrames(project.cardDurationSeconds) + selectedEnding.durationInFrames;
   }, [project, selectedOpening, selectedEnding]);
 
   const create = () => {
     const next = makeProject('未命名專案');
+    setTitleDemoRevision(0);
+    setTitleDemoIntroId('');
+    setTitleDemoStatus('idle');
     setProject(next);
   };
 
@@ -631,43 +832,55 @@ export default function App() {
   };
 
   const uploadTemplates = async (files: File[] | null) => {
-    if (!files?.length) return;
+    if (!files?.length || busyAction) return;
     setError('');
     const accepted = files.filter(file => /\.mp4$/i.test(file.name) || file.type === 'video/mp4');
     const rejected: string[] = [];
     let completed = 0;
-    for (const file of accepted) {
-      const parsed = parseTemplateFile(file);
-      if (!parsed) {
-        rejected.push(file.name);
-        continue;
+    setBusyAction('template-upload');
+    setBusyProgress({ completed: 0, total: accepted.length });
+    try {
+      for (let index = 0; index < accepted.length; index++) {
+        const file = accepted[index];
+        const parsed = parseTemplateFile(file);
+        if (!parsed) {
+          rejected.push(file.name);
+          setBusyProgress({ completed: index + 1, total: accepted.length });
+          continue;
+        }
+        const definition = allTemplateDefinitions.find(item => item.id === parsed.id);
+        if (!definition) {
+          rejected.push(file.name);
+          setBusyProgress({ completed: index + 1, total: accepted.length });
+          continue;
+        }
+        const src = URL.createObjectURL(file);
+        try {
+          const durationSeconds = await readVideoDuration(src);
+          await putStoredClip({ id: parsed.id, name: file.name, blob: file });
+          const oldUrl = clipUrlsRef.current.get(parsed.id);
+          if (oldUrl) URL.revokeObjectURL(oldUrl);
+          clipUrlsRef.current.set(parsed.id, src);
+          setClipAssets(current => [
+            ...current.filter(item => item.id !== parsed.id),
+            { ...definition, name: file.name, src, durationSeconds, durationInFrames: Math.ceil(durationSeconds * fps), stored: true },
+          ].sort((a, b) => allTemplateDefinitions.findIndex(item => item.id === a.id) - allTemplateDefinitions.findIndex(item => item.id === b.id)));
+          completed++;
+        } catch (caught) {
+          URL.revokeObjectURL(src);
+          rejected.push(`${file.name}（${caught instanceof Error ? caught.message : '無法讀取'}）`);
+        }
+        setBusyProgress({ completed: index + 1, total: accepted.length });
       }
-      const definition = allTemplateDefinitions.find(item => item.id === parsed.id);
-      if (!definition) {
-        rejected.push(file.name);
-        continue;
-      }
-      const src = URL.createObjectURL(file);
-      try {
-        const durationSeconds = await readVideoDuration(src);
-        await putStoredClip({ id: parsed.id, name: file.name, blob: file });
-        const oldUrl = clipUrlsRef.current.get(parsed.id);
-        if (oldUrl) URL.revokeObjectURL(oldUrl);
-        clipUrlsRef.current.set(parsed.id, src);
-        setClipAssets(current => [
-          ...current.filter(item => item.id !== parsed.id),
-          { ...definition, name: file.name, src, durationSeconds, durationInFrames: Math.ceil(durationSeconds * fps), stored: true },
-        ].sort((a, b) => allTemplateDefinitions.findIndex(item => item.id === a.id) - allTemplateDefinitions.findIndex(item => item.id === b.id)));
-        completed++;
-      } catch (caught) {
-        URL.revokeObjectURL(src);
-        rejected.push(`${file.name}（${caught instanceof Error ? caught.message : '無法讀取'}）`);
-      }
+      const introCount = clipAssets.filter(clip => clip.kind === 'intro').length;
+      const outroCount = clipAssets.filter(clip => clip.kind === 'outro').length;
+      setNotice(`新增或更新 ${completed} 支模板；目前片頭 ${Math.min(5, introCount + files.filter(file => parseTemplateFile(file)?.kind === 'intro').length)}/5、片尾 ${Math.min(4, outroCount + files.filter(file => parseTemplateFile(file)?.kind === 'outro').length)}/4。`);
+      if (rejected.length) setError(`以下檔案未匯入：${rejected.join('、')}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '更新模板影片失敗。');
+    } finally {
+      setBusyAction(null);
     }
-    const introCount = clipAssets.filter(clip => clip.kind === 'intro').length;
-    const outroCount = clipAssets.filter(clip => clip.kind === 'outro').length;
-    setNotice(`新增或更新 ${completed} 支模板；目前片頭 ${Math.min(5, introCount + files.filter(file => parseTemplateFile(file)?.kind === 'intro').length)}/5、片尾 ${Math.min(4, outroCount + files.filter(file => parseTemplateFile(file)?.kind === 'outro').length)}/4。`);
-    if (rejected.length) setError(`以下檔案未匯入：${rejected.join('、')}`);
   };
 
   const importRecords = async (incomingRecords: PosterRecord[], templateId = 'original') => {
@@ -739,17 +952,22 @@ export default function App() {
   };
 
   const importPosterDatabase = async () => {
+    if (busyAction) return;
+    setBusyAction('poster-import');
     setError('');
     try {
       const { records, templateId } = await readPosterDatabase();
       await importRecords(records, templateId);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '讀取海報資料失敗。');
+    } finally {
+      setBusyAction(null);
     }
   };
 
   const importJsonFile = async (file?: File) => {
-    if (!file) return;
+    if (!file || busyAction) return;
+    setBusyAction('json-import');
     setError('');
     try {
       const parsed = JSON.parse(await file.text()) as { records?: PosterRecord[]; templateId?: string } | PosterRecord[];
@@ -761,6 +979,8 @@ export default function App() {
       await importRecords(records, Array.isArray(parsed) ? 'original' : parsed.templateId || 'original');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '無法匯入這個 JSON 檔案。');
+    } finally {
+      setBusyAction(null);
     }
   };
 
@@ -770,6 +990,7 @@ export default function App() {
       return;
     }
     setError('');
+    setNotice('');
     setProgress(0);
     setRendering(true);
     try {
@@ -803,6 +1024,7 @@ export default function App() {
       link.download = `${domainPrefix}${safeFileName(project.name)}.mp4`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+      setNotice('MP4 已產生，下載已開始。');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '算繪失敗，請稍後再試。');
     } finally {
@@ -856,15 +1078,15 @@ export default function App() {
             <p>同一網站來源可直接讀取海報資料庫；若你的資料在另一個網址，先從海報製作室匯出 JSON，再於此匯入。圖片會一併帶入。</p>
           </div>
           <div className="import-actions">
-            <button className="button primary" onClick={() => void importPosterDatabase()}><Layers size={16} /> 讀取本來源海報資料</button>
-            <button className="button secondary" onClick={() => jsonImportRef.current?.click()}><Upload size={16} /> 匯入海報資料 JSON</button>
+            <button className="button primary" disabled={busyAction !== null} aria-busy={busyAction === 'poster-import'} onClick={() => void importPosterDatabase()}>{busyAction === 'poster-import' ? <><span className="spinner" />讀取中…</> : <><Layers size={16} /> 讀取本來源海報資料</>}</button>
+            <button className="button secondary" disabled={busyAction !== null} aria-busy={busyAction === 'json-import'} onClick={() => jsonImportRef.current?.click()}>{busyAction === 'json-import' ? <><span className="spinner dark" />匯入中…</> : <><Upload size={16} /> 匯入海報資料 JSON</>}</button>
             <input ref={jsonImportRef} type="file" accept="application/json,.json" hidden onChange={event => { void importJsonFile(event.target.files?.[0]); event.currentTarget.value = ''; }} />
           </div>
         </section>
 
         <section className="clip-library">
           <div><div className="eyebrow muted">SOURCE VIDEO TEMPLATES</div><h2>片頭／片尾原始影片</h2><p>目前已載入片頭 {introCount}/5、片尾 {outroCount}/4；可直接預覽與匯出，模板影片保留原音訊。</p></div>
-          <div className="clip-library-actions"><span className={`clip-count ${introCount === 5 && outroCount === 4 ? 'complete' : ''}`}>{introCount + outroCount} / 9 支</span><button className="button secondary" onClick={() => clipUploadRef.current?.click()}><Upload size={15} /> 更新／補上 MP4</button><input ref={clipUploadRef} type="file" accept="video/mp4,.mp4" multiple hidden onChange={event => { void uploadTemplates(event.target.files ? Array.from(event.target.files) : null); event.currentTarget.value = ''; }} /></div>
+          <div className="clip-library-actions"><span className={`clip-count ${introCount === 5 && outroCount === 4 ? 'complete' : ''}`}>{introCount + outroCount} / 9 支</span><button className="button secondary" disabled={busyAction !== null} aria-busy={busyAction === 'template-upload'} onClick={() => clipUploadRef.current?.click()}>{busyAction === 'template-upload' ? <><span className="spinner dark" />更新中 {busyProgress.completed}/{busyProgress.total}</> : <><Upload size={15} /> 更新／補上 MP4</>}</button><input ref={clipUploadRef} type="file" accept="video/mp4,.mp4" multiple hidden onChange={event => { void uploadTemplates(event.target.files ? Array.from(event.target.files) : null); event.currentTarget.value = ''; }} /></div>
           <div className="clip-template-list">{allTemplateDefinitions.map(item => <span key={item.id} className={findClip(item.id) ? 'clip-ready' : 'clip-missing'}><i />{item.title}</span>)}</div>
         </section>
 
@@ -872,7 +1094,7 @@ export default function App() {
         <section className="project-section">
           <div className="section-head"><div><div className="eyebrow muted">WORKSPACE</div><h2>我的影片專案 <span className="count">{projects.length}</span></h2></div><button className="button secondary" onClick={create}><Plus size={16} /> 新增空白專案</button></div>
           {projects.length === 0 ? <div className="empty-state"><div className="empty-icon"><FolderOpen size={25} /></div><h3>還沒有影片專案</h3><p>點「讀取本來源海報資料」或匯入 JSON，依每個有作品的領域自動建立一支影片。</p></div> : <div className="project-grid">{projects.map(item => <article className="project-card" key={item.id}>
-            <button className="project-open" onClick={() => setProject(item)}><div className={`project-art art-${Number(item.intro.replace('intro-', '')) || 0}`}><div className="art-lines" /><Film size={26} /><span>{item.sourceDomainCode ? `${item.sourceDomainCode}｜${domainName(item.sourceDomainCode)}` : 'EXPO MOTION'}</span></div><div className="project-info"><strong>{item.name}</strong><span>{item.cards.length} 件作品 · {new Date(item.updatedAt).toLocaleDateString('zh-TW')}</span></div></button>
+            <button className="project-open" onClick={() => { setTitleDemoRevision(0); setTitleDemoIntroId(''); setTitleDemoStatus('idle'); setProject(item); }}><div className={`project-art art-${Number(item.intro.replace('intro-', '')) || 0}`}><div className="art-lines" /><Film size={26} /><span>{item.sourceDomainCode ? `${item.sourceDomainCode}｜${domainName(item.sourceDomainCode)}` : 'EXPO MOTION'}</span></div><div className="project-info"><strong>{item.name}</strong><span>{item.cards.length} 件作品 · {new Date(item.updatedAt).toLocaleDateString('zh-TW')}</span></div></button>
             <button className="icon-button delete-project" title="刪除專案" onClick={() => void del(item)}><Trash2 size={16} /></button>
           </article>)}</div>}
         </section>
@@ -897,7 +1119,7 @@ export default function App() {
           {stage === 2 && <section className="stage-panel"><div className="panel-kicker">STEP 02 · ORIGINAL OPENING CLIPS</div><h1>選擇原始片頭影片</h1><p className="lead">縮圖擷取自原始 MP4；點選方案可播放完整影片。預覽與最終匯出會套用目前領域名稱。</p>
             <div className="template-grid intro-grid">{templateList('intro').map(item => {
               const clip = findClip(item.id);
-              return <button className={`template-card ${project.intro === item.id ? 'selected' : ''}`} key={item.id} disabled={!clip} aria-pressed={project.intro === item.id} onClick={() => { update(current => ({ ...current, intro: item.id })); setPreviewTemplateId(item.id); }}>
+              return <button className={`template-card ${project.intro === item.id ? 'selected' : ''}`} key={item.id} disabled={!clip} aria-pressed={project.intro === item.id} onClick={() => { setTitleDemoRevision(0); setTitleDemoIntroId(''); setTitleDemoStatus('idle'); update(current => ({ ...current, intro: item.id })); setPreviewTemplateId(item.id); }}>
                 <TemplateThumbnail clip={clip} />
                 <span className="template-caption"><strong>{item.title}</strong><small>{clip ? `${clip.durationSeconds.toFixed(2)} 秒 · H.264 MP4${clip.stored ? ' · 本機匯入' : ' · 預載模板'}` : '尚未載入此影片'}</small></span>
                 {project.intro === item.id && <span className="selected-check"><Check size={14} /></span>}
@@ -907,7 +1129,7 @@ export default function App() {
             <div className="stage-actions spread"><button className="button secondary" onClick={() => go(1)}><ArrowLeft size={16} /> 上一步</button><button className="button primary" disabled={!selectedOpening} onClick={() => go(3)}>編輯影片內容 <ArrowRight size={17} /></button></div>
           </section>}
 
-          {stage === 3 && <section className="stage-panel edit-stage"><div className="panel-kicker">STEP 03 · CONTENT</div><div className="edit-heading"><div><h1>編輯影片內容</h1><p className="lead">作品名稱、班級、圖片與順序取自海報製作室；分類依原站 A–F、N 保留，不會重分。</p></div><span className="group-count"><Layers size={15} />{project.cards.length} 件作品</span></div>
+          {stage === 3 && <section className="stage-panel edit-stage"><div className="panel-kicker">STEP 03 · CONTENT</div><div className="edit-heading"><div><h1>編輯影片內容</h1><p className="lead">作品名稱、班級、圖片與順序取自海報製作室；分類依原站 A–F、N 保留，不會重分。</p></div><span className="group-count"><Layers size={15} />{project.cards.length} 件作品 · {getCardDurationSeconds(project.cardDurationSeconds)} 秒／件</span></div>
             <div className="editor-layout"><div className="editor-main">
               <div className="edit-card"><div className="card-heading"><span className="mini-icon"><Sparkles size={15} /></span><div><h3>展覽領域</h3><small>依原海報編號自動分類，影片工作室不變更原站分類</small></div></div><div className="domain-readonly"><strong>{project.sourceDomainCode || '自訂'}</strong><span>{project.domains.join('、')}</span><span>{project.cards.length} 件作品</span></div></div>
               <div className="card-heading groups-title"><div><h3>入圍作品卡片</h3><small>成品海報文字請在海報製作室修改後重新讀取；可調整圖片及順序</small></div><div className="group-tools"><button className="button secondary small" onClick={() => uploadRef.current?.click()}><Upload size={14} /> 批次上傳圖片</button><input ref={uploadRef} type="file" accept="image/*" multiple hidden onChange={event => { void imageFiles(event.target.files ? Array.from(event.target.files) : null); event.currentTarget.value = ''; }} /></div></div>
@@ -918,7 +1140,39 @@ export default function App() {
                 <button className="icon-button remove-group" title="移除此作品" onClick={() => update(current => ({ ...current, cards: current.cards.filter(item => item.id !== card.id) }))}><Trash2 size={16} /></button>
               </article>)}</div>
               <button className="add-group" onClick={() => update(current => ({ ...current, cards: [...current.cards, blankCard(current.domains[0] || domains[0][1])] }))}><Plus size={17} /> 新增一件作品 <span>{project.cards.length} 件</span></button>
-              <div className="edit-card transition-card"><div><h3>轉場效果</h3><small>套用於作品介紹卡片之間</small></div><select className="text-input" value={project.transition} onChange={event => update(current => ({ ...current, transition: event.target.value }))}><option>淡入淡出</option><option>滑動切換</option><option>柔和縮放</option><option>直接切換</option></select></div>
+              <div className="edit-card title-animation-card">
+                <div className="title-animation-heading">
+                  <div><h3>片頭領域名稱進場動畫</h3><small>依目前片頭提供推薦；每支片頭各自記住選擇</small></div>
+                  {recommendedTitleAnimation && <span className="title-animation-recommendation"><Sparkles size={13} /> 片頭方案 {project.intro.replace('intro-', '')} 建議：{introTitleAnimationOptions.find(option => option.id === recommendedTitleAnimation.animationId)?.name}</span>}
+                </div>
+                {recommendedTitleAnimation && <p className="title-animation-reason">{recommendedTitleAnimation.reason}。點選縮圖會在原始片頭上實際播放一次，並套用在預覽與匯出。</p>}
+                <div className="title-animation-options" role="radiogroup" aria-label="選擇片頭領域名稱進場動畫">
+                  {introTitleAnimationOptions.map(option => <button key={option.id} type="button" className={`title-animation-option ${selectedTitleAnimation === option.id ? 'selected' : ''}`} role="radio" aria-checked={selectedTitleAnimation === option.id} aria-label={`播放並選擇${option.name}`} onClick={() => chooseTitleAnimation(option.id)}>
+                    <IntroTitleAnimationThumbnail option={option} clip={selectedOpening} layout={introFieldLayouts[project.intro] || introFieldLayouts['intro-1']} />
+                    {recommendedTitleAnimation?.animationId === option.id && <span className="title-animation-recommended-tag">此片頭推薦</span>}
+                  </button>)}
+                </div>
+                {titleDemoRevision > 0 && titleDemoIntroId === project.intro && selectedOpening ? <div className="title-animation-demo">
+                  <div className="title-demo-heading"><span><strong>片頭實際示範</strong><small>{introTitleAnimationOptions.find(option => option.id === selectedTitleAnimation)?.name} · 播放一次</small></span><button className="button secondary small" disabled={titleDemoStatus === 'loading'} onClick={replayTitleDemo}>{titleDemoStatus === 'loading' ? <><span className="spinner dark" />準備中…</> : '重播片頭示範'}</button></div>
+                  <div className={`title-demo-status status-${titleDemoStatus}`} role="status" aria-live="polite">{titleDemoStatus === 'loading' ? <><span className="spinner dark" />正在載入片頭並準備播放…</> : titleDemoStatus === 'playing' ? <><span className="activity-dot" />示範播放中；動畫完成後會自動停止</> : titleDemoStatus === 'paused' ? '示範已暫停，可使用播放器控制繼續播放。' : titleDemoStatus === 'done' ? <><Check size={13} />示範播放完成</> : titleDemoStatus === 'error' ? '示範播放遇到問題；可按「重播片頭示範」再試一次。' : '示範尚未開始。'}</div>
+                  <Player ref={titleDemoPlayerRef} key={titleDemoRevision} component={IntroTitlePreviewComposition} inputProps={{ project, openingClip: selectedOpening, animationId: selectedTitleAnimation }} durationInFrames={selectedOpening.durationInFrames} compositionWidth={W} compositionHeight={H} fps={fps} autoPlay controls style={{ width: '100%', aspectRatio: '16/9' }} />
+                  <small className="title-demo-note">動畫在領域名稱出現時播放一次；此選擇會用於正式預覽與 MP4 匯出。</small>
+                </div> : <div className="title-animation-placeholder">點選任一縮圖，即可在下方播放這支片頭的實際字效示範。</div>}
+              </div>
+              <div className="edit-card card-duration-card">
+                <div><h3>入圍作品顯示時間</h3><small>設定每件作品卡片停留秒數，並同步調整預覽與匯出影片長度</small></div>
+                <label className="duration-control"><span>每件作品</span><input className="text-input duration-input" type="number" min={minCardDurationSeconds} max={maxCardDurationSeconds} step={0.5} aria-label="每件入圍作品顯示秒數" value={getCardDurationSeconds(project.cardDurationSeconds)} onChange={event => update(current => ({ ...current, cardDurationSeconds: Math.min(maxCardDurationSeconds, Math.max(minCardDurationSeconds, Number(event.target.value) || minCardDurationSeconds)) }))} /><span>秒</span></label>
+              </div>
+              <div className="edit-card transition-card">
+                <div className="transition-settings-heading">
+                  <div><h3>轉場動畫</h3><small>選擇作品卡片轉場，並設定每幾件作品重複一次</small></div>
+                  <label className="repeat-control"><span>每</span><input className="text-input repeat-input" type="number" min={1} max={maxTransitionRepeatEvery} step={1} aria-label="轉場動畫每幾件作品循環一次" value={getTransitionRepeatEvery(project.transitionRepeatEvery)} onChange={event => update(current => ({ ...current, transitionRepeatEvery: getTransitionRepeatEvery(Number(event.target.value)) }))} /><span>件重複一次</span></label>
+                </div>
+                <div className="transition-options" role="radiogroup" aria-label="選擇轉場動畫">
+                  {transitionOptions.map(option => <button key={option.value} type="button" className={`transition-option ${project.transition === option.value ? 'selected' : ''}`} role="radio" aria-checked={project.transition === option.value} onClick={() => update(current => ({ ...current, transition: option.value }))}><TransitionThumbnail option={option} /></button>)}
+                </div>
+                {getTransitionRepeatEvery(project.transitionRepeatEvery) > 1 && <p className="transition-repeat-note">效果從第 1 件作品開始，每 {getTransitionRepeatEvery(project.transitionRepeatEvery)} 件播放一次；其餘作品直接切換。</p>}
+              </div>
             </div><aside className="editor-aside"><div className="aside-sticky"><div className="aside-label">製作小提示</div><div className="tip-icon"><CircleHelp size={20} /></div><h3>讓作品有自己的順序</h3><p>影片每支只收錄目前領域的真實入圍作品。圖片沒有資料時會留白，不會用假作品代替。</p><div className="aside-divider" /><div className="aside-stat"><span>作品數</span><strong>{project.cards.length} 件</strong></div><div className="aside-stat"><span>影片規格</span><strong>Full HD · MP4</strong></div><div className="aside-note"><Cloud size={14} /> 編輯內容會自動儲存至此裝置</div></div></aside></div>
             <div className="stage-actions spread"><button className="button secondary" onClick={() => go(2)}><ArrowLeft size={16} /> 上一步</button><button className="button primary" onClick={() => go(4)}>選擇片尾 <ArrowRight size={17} /></button></div>
           </section>}
@@ -938,8 +1192,8 @@ export default function App() {
 
           {stage === 5 && <section className="stage-panel preview-stage"><div className="panel-kicker">STEP 05 · PREVIEW & EXPORT</div><div className="edit-heading"><div><h1>預覽與匯出</h1><p className="lead">領域名稱會依片頭畫面直接疊入；原有固定領域字樣會被替換，不再接重複標題卡。</p></div><span className="quality-pill">FULL HD · 1080P</span></div>
             {selectedOpening && selectedEnding && duration > 0 ? <div className="player-wrap"><Player component={ExpoVideoComposition} inputProps={{ project, openingClip: selectedOpening, endingClip: selectedEnding }} durationInFrames={duration} compositionWidth={W} compositionHeight={H} fps={fps} controls loop style={{ width: '100%', aspectRatio: '16/9' }} /></div> : <div className="empty-state"><h3>模板素材尚未就緒</h3><p>請先選擇可用的片頭與片尾影片。</p></div>}
-            <div className="preview-meta"><span><Film size={15} />{project.cards.length} 件作品</span><span>{Math.floor(duration / fps / 60)}:{String(Math.floor(duration / fps) % 60).padStart(2, '0')} 分鐘</span><span>1920 × 1080 · 30 FPS · H.264 / AAC</span></div>
-            <div className="browser-note"><CircleHelp size={16} /><div><strong>瀏覽器端算繪</strong><span>MP4 會在你的裝置上產生，含所選片頭片尾的影像與音訊；請保持此分頁開啟，時間視電腦效能而定。</span></div></div>
+            <div className="preview-meta"><span><Film size={15} />{project.cards.length} 件作品 · {getCardDurationSeconds(project.cardDurationSeconds)} 秒／件</span><span>{Math.floor(duration / fps / 60)}:{String(Math.floor(duration / fps) % 60).padStart(2, '0')} 分鐘總長</span><span>轉場每 {getTransitionRepeatEvery(project.transitionRepeatEvery)} 件循環</span><span>1920 × 1080 · 30 FPS · H.264 / AAC</span></div>
+            <div className="browser-note"><CircleHelp size={16} /><div><strong>瀏覽器端算繪</strong><span>MP4 會在你的裝置上產生；背景音樂只在入圍作品卡片段落播放，開頭與結尾各淡化最長 1.2 秒，片頭／片尾保留原音訊。請保持此分頁開啟，時間視電腦效能而定。</span></div></div>
             {error && <div className="error-box"><X size={17} /><span>{error}</span></div>}
             {rendering && <div className="render-progress"><div className="progress-label"><span>正在算繪 H.264 / AAC 影片…</span><b>{progress}%</b></div><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><small>請保持頁面開啟；來源片頭與片尾會完整納入輸出。</small></div>}
             <div className="stage-actions spread"><button className="button secondary" onClick={() => go(4)}><ArrowLeft size={16} /> 返回片尾</button><button className="button primary export-button" disabled={rendering || !selectedOpening || !selectedEnding} onClick={() => void exportVideo()}>{rendering ? <><span className="spinner" /> 正在算繪 {progress}%</> : <><Download size={17} /> 匯出此領域 MP4</>}</button></div>
