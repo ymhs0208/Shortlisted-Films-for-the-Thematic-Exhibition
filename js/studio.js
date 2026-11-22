@@ -757,16 +757,18 @@ $('exportVideoData').onclick = () => runOperation($('exportVideoData'), '正在�
     if (!exportRecords.length) throw Error('目前沒有可匯出的專題資料');
     const rows = [];
     for (const [index, record] of exportRecords.entries()) {
-      setLabel(`正在整理圖片 ${index + 1} / ${exportRecords.length}`);
+      setLabel(`正在產生海報圖 ${index + 1} / ${exportRecords.length}`);
       let imageDataUrl = '';
       if (record.imageSource !== 'demo' && record.imageBlob instanceof Blob) imageDataUrl = await blobDataUrl(record.imageBlob);
       else if (record.imageSource !== 'demo' && typeof record.image?.src === 'string' && record.image.src.startsWith('data:image/')) imageDataUrl = record.image.src;
-      rows.push({ code: record.code, name: record.name, className: record.className, filename: record.filename || '', imageDataUrl });
+      const posterDataUrl = imageDataUrl ? await blobDataUrl(await png(record)) : '';
+      rows.push({ code: record.code, name: record.name, className: record.className, filename: record.filename || '', imageDataUrl, posterDataUrl });
     }
     const payload = {
       format: 'expo-motion-poster-records',
       version: 1,
       exportedAt: new Date().toISOString(),
+      templateId: selectedTemplateId,
       domains: DOMAINS.map(([code, name]) => ({ code, name })),
       records: rows,
     };

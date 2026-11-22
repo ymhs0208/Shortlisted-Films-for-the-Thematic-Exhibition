@@ -3,6 +3,7 @@ import { Video } from '@remotion/media';
 import { Player } from '@remotion/player';
 import { canRenderMediaOnWeb, renderMediaOnWeb } from '@remotion/web-renderer';
 import { AbsoluteFill, interpolate, Sequence, useCurrentFrame } from 'remotion';
+import { getPosterTemplate, renderPosterCanvas } from '../../js/poster-renderer.js';
 import {
   ArrowLeft,
   ArrowRight,
@@ -30,6 +31,7 @@ type Card = {
   team: string;
   title: string;
   domain: string;
+  isRenderedPoster?: boolean;
 };
 
 type Project = {
@@ -66,9 +68,13 @@ type PosterRecord = {
   filename?: string;
   imageBlob?: Blob | null;
   imageDataUrl?: string;
+  posterDataUrl?: string;
   image?: string;
+  fit?: 'contain' | 'cover';
   isStarter?: boolean;
 };
+
+type PosterTemplateImage = HTMLImageElement & { exhibitionTemplateId?: string };
 
 type TemplateManifest = {
   intros: Array<{ id: string; filename: string; durationSeconds: number }>;
@@ -84,7 +90,6 @@ const POSTER_KEY = 'app';
 const fps = 30;
 const W = 1920;
 const H = 1080;
-const titleFrames = 75;
 const framesPerCard = 90;
 const domains = [
   ['A', '企業智慧化'],
@@ -108,6 +113,33 @@ const outroTemplates = [1, 2, 3, 4].map(number => ({
   title: `片尾方案${['一', '二', '三', '四'][number - 1]}`,
 }));
 const allTemplateDefinitions = [...introTemplates, ...outroTemplates];
+
+type IntroFieldLayout = {
+  startSeconds: number;
+  endSeconds: number;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  background: string;
+  color: string;
+  fontSize: number;
+  border: string;
+  borderRadius: number;
+  shadow: string;
+  overline?: boolean;
+  replacesEmbeddedTitle?: boolean;
+};
+
+// Positions and time windows are matched to the five supplied intro clips.
+// Clips 2–5 have a baked-in "企業智慧化" title; their opaque plates replace that line.
+const introFieldLayouts: Record<string, IntroFieldLayout> = {
+  'intro-1': { startSeconds: 0.7, endSeconds: 2.4, left: 21, top: 85.5, width: 58, height: 12.5, background: 'rgba(4, 13, 27, 0.72)', color: '#fff8e8', fontSize: 72, border: '1px solid rgba(214, 182, 110, 0.82)', borderRadius: 30, shadow: '0 8px 32px rgba(0,0,0,0.48)' },
+  'intro-2': { startSeconds: 6.65, endSeconds: 10, left: 20, top: 36, width: 60, height: 27, background: '#07172f', color: '#f7c932', fontSize: 90, border: '1px solid rgba(242, 206, 108, 0.68)', borderRadius: 20, shadow: '0 0 28px rgba(0,0,0,0.42)', replacesEmbeddedTitle: true },
+  'intro-3': { startSeconds: 6.15, endSeconds: 9.1, left: 30, top: 54, width: 45, height: 16, background: '#081a2c', color: '#ffd13a', fontSize: 66, border: '1px solid rgba(117, 201, 247, 0.42)', borderRadius: 12, shadow: '0 8px 30px rgba(0,0,0,0.4)', replacesEmbeddedTitle: true },
+  'intro-4': { startSeconds: 9.93, endSeconds: 12.57, left: 21, top: 38, width: 58, height: 22, background: '#ffefcd', color: '#073e75', fontSize: 86, border: '0 solid transparent', borderRadius: 0, shadow: 'none', replacesEmbeddedTitle: true },
+  'intro-5': { startSeconds: 6.55, endSeconds: 10, left: 32, top: 75.5, width: 44, height: 15, background: '#1b1d28', color: '#fff9e8', fontSize: 64, border: '1px solid rgba(240, 215, 160, 0.62)', borderRadius: 14, shadow: '0 8px 30px rgba(0,0,0,0.4)', replacesEmbeddedTitle: true },
+};
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const domainForCode = (code: string) => domains.find(([prefix]) => prefix === String(code || '').trim().charAt(0).toUpperCase());
@@ -243,7 +275,38 @@ function dataUrlFromRecord(record: PosterRecord): Promise<string | undefined> | 
   return undefined;
 }
 
-async function readPosterDatabase(): Promise<PosterRecord[]> {
+function loadImageDataUrl(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('無法解碼原海報製作室的作品圖片。'));
+    image.src = src;
+  });
+}
+
+function loadVideoPosterTemplate(templateId: string): Promise<PosterTemplateImage> {
+  const config = getPosterTemplate(templateId);
+  const assetPath = config.src.replace(/^\.\//, '');
+  const src = new URL(`../${assetPath}`, window.location.href).toString();
+  return new Promise((resolve, reject) => {
+    const image = new Image() as PosterTemplateImage;
+    image.exhibitionTemplateId = config.id;
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`無法載入「${config.name}」海報模板。`));
+    image.src = src;
+  });
+}
+
+async function renderImportedPoster(record: PosterRecord, imageDataUrl: string, template: PosterTemplateImage): Promise<string> {
+  const image = await loadImageDataUrl(imageDataUrl);
+  const canvas = document.createElement('canvas');
+  canvas.width = 1920;
+  canvas.height = 1080;
+  renderPosterCanvas(canvas, { ...record, image }, template, image);
+  return canvas.toDataURL('image/png');
+}
+
+async function readPosterDatabase(): Promise<{ records: PosterRecord[]; templateId: string }> {
   if ('databases' in indexedDB && typeof indexedDB.databases === 'function') {
     const databases = await indexedDB.databases();
     if (!databases.some(database => database.name === POSTER_DB)) {
@@ -259,13 +322,13 @@ async function readPosterDatabase(): Promise<PosterRecord[]> {
     db.close();
     throw new Error('這個來源的海報資料庫尚未初始化；請先開啟海報製作室，或使用 JSON 匯入。');
   }
-  const saved = await new Promise<{ records?: PosterRecord[] }>((resolve, reject) => {
+  const saved = await new Promise<{ records?: PosterRecord[]; templateId?: string }>((resolve, reject) => {
     const request = db.transaction(POSTER_STORE, 'readonly').objectStore(POSTER_STORE).get(POSTER_KEY);
     request.onsuccess = () => resolve(request.result || {});
     request.onerror = () => reject(request.error || new Error('無法讀取海報製作室資料。'));
   });
   db.close();
-  return (saved.records || []).filter(record => !record.isStarter);
+  return { records: (saved.records || []).filter(record => !record.isStarter), templateId: saved.templateId || 'original' };
 }
 
 function manifestUrl(): string {
@@ -285,6 +348,7 @@ function publicManifest(): Promise<TemplateManifest | null> {
 function CardScene({ card, index, total, transition }: { card: Card; index: number; total: number; transition: string }) {
   const frame = useCurrentFrame();
   const fade = interpolate(frame, [0, 10, 78, 89], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const showRenderedPoster = Boolean(card.image && card.isRenderedPoster);
   const transform = transition === '滑動切換'
     ? `translateX(${interpolate(frame, [0, 12], [80, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })}px)`
     : transition === '柔和縮放'
@@ -292,43 +356,67 @@ function CardScene({ card, index, total, transition }: { card: Card; index: numb
       : 'none';
   return (
     <AbsoluteFill style={{ background: '#07152d', color: '#fff', fontFamily: 'Arial, "Noto Sans TC", sans-serif', overflow: 'hidden' }}>
-      {card.image && <img src={card.image} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.24 }} />}
+      {card.image && !showRenderedPoster && <img src={card.image} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.24 }} />}
       <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', padding: 90, textAlign: 'center', opacity: transition === '直接切換' ? 1 : fade, transform }}>
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #101f3d99, #07152d33)' }} />
-        <div style={{ fontSize: 24, letterSpacing: 6, color: '#d6b66e', marginBottom: 28 }}>{card.domain}</div>
-        {card.code && <div style={{ fontSize: 24, opacity: 0.72, marginBottom: 14 }}>編號 {card.code}</div>}
-        <div style={{ fontSize: 34, opacity: 0.82, marginBottom: 18 }}>{card.team || '入圍作品'}</div>
-        <div style={{ fontSize: 68, fontWeight: 750, maxWidth: 1450, lineHeight: 1.3 }}>{card.title || '作品名稱'}</div>
-        <div style={{ position: 'absolute', bottom: 76, fontSize: 22, opacity: 0.62 }}>{String(index + 1).padStart(2, '0')} / {total}</div>
+        {showRenderedPoster && <img src={card.image} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', background: '#fff' }} />}
+        {!showRenderedPoster && <>
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #101f3d99, #07152d33)' }} />
+          <div style={{ fontSize: 24, letterSpacing: 6, color: '#d6b66e', marginBottom: 28 }}>{card.domain}</div>
+          {card.code && <div style={{ fontSize: 24, opacity: 0.72, marginBottom: 14 }}>編號 {card.code}</div>}
+          <div style={{ fontSize: 34, opacity: 0.82, marginBottom: 18 }}>{card.team || '入圍作品'}</div>
+          <div style={{ fontSize: 68, fontWeight: 750, maxWidth: 1450, lineHeight: 1.3 }}>{card.title || '作品名稱'}</div>
+        </>}
+        <div style={{ position: 'absolute', bottom: showRenderedPoster ? 34 : 76, right: showRenderedPoster ? 42 : undefined, fontSize: showRenderedPoster ? 18 : 22, opacity: showRenderedPoster ? 0.95 : 0.62, background: showRenderedPoster ? '#07152dcc' : 'transparent', borderRadius: 6, padding: showRenderedPoster ? '8px 12px' : 0 }}>{String(index + 1).padStart(2, '0')} / {total}</div>
       </AbsoluteFill>
-      <div style={{ position: 'absolute', right: 48, bottom: 40, fontSize: 18, opacity: 0.5 }}>EXPO MOTION</div>
+      {!showRenderedPoster && <div style={{ position: 'absolute', right: 48, bottom: 40, fontSize: 18, opacity: 0.5 }}>EXPO MOTION</div>}
     </AbsoluteFill>
   );
 }
 
-function DomainTitleScene({ project }: { project: Project }) {
+function IntroFieldOverlay({ project, layout, durationInFrames }: { project: Project; layout: IntroFieldLayout; durationInFrames: number }) {
+  const frame = useCurrentFrame();
+  const domain = project.domains[0] || (project.sourceDomainCode ? domainName(project.sourceDomainCode) : '專題成果展');
+  const fieldName = project.sourceDomainCode ? `${project.sourceDomainCode}｜${domain}` : domain;
+  const chars = Array.from(fieldName);
+  const horizontalPadding = layout.width < 35 ? 16 : 28;
+  const verticalPadding = layout.width < 35 ? 8 : 12;
+  const letterSpacing = layout.width < 35 ? 0 : 2;
+  const textWidthUnits = chars.reduce((width, char) => width + (char.codePointAt(0)! < 256 ? 0.68 : 1), 0);
+  const availableWidth = W * layout.width / 100 - horizontalPadding * 2 - 2;
+  const widthLimitedFontSize = Math.floor((availableWidth - letterSpacing * Math.max(0, chars.length - 1) - 12) / Math.max(1, textWidthUnits));
+  const availableHeight = H * layout.height / 100 - verticalPadding * 2 - 2;
+  const heightLimitedFontSize = Math.floor(availableHeight / 1.2);
+  const fontSize = Math.min(layout.fontSize, widthLimitedFontSize, heightLimitedFontSize);
+  const fadeFrames = Math.min(7, Math.floor(durationInFrames / 4));
+  const opacity = layout.replacesEmbeddedTitle ? 1 : interpolate(frame, [0, fadeFrames, durationInFrames - fadeFrames, durationInFrames], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   return (
-    <AbsoluteFill style={{ background: 'radial-gradient(ellipse at 50% 25%, #263f70 0%, #07152d 70%)', color: '#fff', fontFamily: 'Arial, "Noto Sans TC", sans-serif', justifyContent: 'center', alignItems: 'center', textAlign: 'center', padding: 90 }}>
-      <div style={{ fontSize: 25, color: '#d6b66e', letterSpacing: 8, marginBottom: 34 }}>入圍作品專題展演</div>
-      <div style={{ fontSize: 69, fontWeight: 800, lineHeight: 1.25 }}>{project.title || `${project.sourceDomainCode ? `${project.sourceDomainCode}｜` : ''}${project.domains[0] || '專題成果展'}`}</div>
-      <div style={{ fontSize: 35, marginTop: 24, opacity: 0.84 }}>{project.subtitle}</div>
-      <div style={{ fontSize: 29, marginTop: 18, opacity: 0.72 }}>{project.activity}</div>
-      <div style={{ position: 'absolute', bottom: 100, fontSize: 25, opacity: 0.65 }}>{project.cards.length} 件入圍作品</div>
-    </AbsoluteFill>
+    <div style={{ position: 'absolute', left: `${layout.left}%`, top: `${layout.top}%`, width: `${layout.width}%`, height: `${layout.height}%`, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: layout.overline ? 5 : 0, padding: layout.width < 35 ? '8px 16px' : '12px 28px', overflow: 'hidden', background: layout.background, color: layout.color, border: layout.border, borderRadius: layout.borderRadius, boxShadow: layout.shadow, opacity, fontFamily: 'Arial, "Noto Sans TC", sans-serif', textAlign: 'center' }}>
+      {layout.overline && <span style={{ fontSize: Math.max(14, fontSize * 0.38), fontWeight: 600, letterSpacing: 4, lineHeight: 1.1, opacity: 0.78 }}>本片領域</span>}
+      <span style={{ fontSize, fontWeight: 800, lineHeight: 1.2, letterSpacing, whiteSpace: 'nowrap', textShadow: layout.background.startsWith('rgba') ? '0 2px 12px rgba(0,0,0,0.28)' : 'none' }}>{fieldName}</span>
+    </div>
   );
 }
 
 export function ExpoVideoComposition({ project, openingClip, endingClip }: { project: Project; openingClip: ClipAsset; endingClip: ClipAsset }) {
   const openingFrames = openingClip.durationInFrames;
-  const cardsStart = openingFrames + titleFrames;
+  const cardsStart = openingFrames;
   const endingStart = cardsStart + project.cards.length * framesPerCard;
+  const fieldLayout = introFieldLayouts[openingClip.id];
+  const overlayStart = fieldLayout ? Math.min(openingFrames, Math.round(fieldLayout.startSeconds * fps)) : openingFrames;
+  const overlayEnd = fieldLayout ? Math.min(openingFrames, Math.round(fieldLayout.endSeconds * fps)) : openingFrames;
+  const overlayDuration = Math.max(0, overlayEnd - overlayStart);
   return (
     <AbsoluteFill style={{ backgroundColor: '#07152d', overflow: 'hidden' }}>
       <Sequence from={0} durationInFrames={openingFrames} name="原始片頭">
         <Video src={openingClip.src} durationInFrames={openingFrames} style={{ width: '100%', height: '100%', objectFit: 'cover' }} volume={1} />
-      </Sequence>
-      <Sequence from={openingFrames} durationInFrames={titleFrames} name="領域標題">
-        <DomainTitleScene project={project} />
+        {/* Intro 4's baked-in title briefly zooms across the screen before settling.
+            Hide only that short entrance, then keep the smaller title-line plate. */}
+        {openingClip.id === 'intro-4' && <Sequence from={Math.round(9.93 * fps)} durationInFrames={Math.round((10.4 - 9.93) * fps)} name="片頭四舊標題進場遮罩">
+          <div style={{ position: 'absolute', left: 0, top: '15%', width: '100%', height: '65%', background: '#ffefcd' }} />
+        </Sequence>}
+        {fieldLayout && overlayDuration > 0 && <Sequence from={overlayStart} durationInFrames={overlayDuration} name="片頭領域名稱">
+          <IntroFieldOverlay project={project} layout={fieldLayout} durationInFrames={overlayDuration} />
+        </Sequence>}
       </Sequence>
       {project.cards.map((card, index) => (
         <Sequence key={card.id} from={cardsStart + index * framesPerCard} durationInFrames={framesPerCard} name={`作品 ${index + 1}`}>
@@ -443,7 +531,7 @@ export default function App() {
   const selectedEnding = project ? findClip(project.outro) : undefined;
   const duration = useMemo(() => {
     if (!project || !selectedOpening || !selectedEnding) return 0;
-    return selectedOpening.durationInFrames + titleFrames + project.cards.length * framesPerCard + selectedEnding.durationInFrames;
+    return selectedOpening.durationInFrames + project.cards.length * framesPerCard + selectedEnding.durationInFrames;
   }, [project, selectedOpening, selectedEnding]);
 
   const create = () => {
@@ -474,7 +562,7 @@ export default function App() {
     const values = await Promise.all(list.map(file => blobToDataUrl(file)));
     update(current => ({
       ...current,
-      cards: current.cards.map((card, index) => values[index - start] !== undefined ? { ...card, image: values[index - start] } : card),
+      cards: current.cards.map((card, index) => values[index - start] !== undefined ? { ...card, image: values[index - start], isRenderedPoster: false } : card),
     }));
     setNotice(`已載入 ${Math.min(values.length, Math.max(0, (project?.cards.length || 0) - start))} 張圖片`);
   };
@@ -529,10 +617,11 @@ export default function App() {
     if (rejected.length) setError(`以下檔案未匯入：${rejected.join('、')}`);
   };
 
-  const importRecords = async (incomingRecords: PosterRecord[]) => {
+  const importRecords = async (incomingRecords: PosterRecord[], templateId = 'original') => {
     const records = incomingRecords.filter(record => !record.isStarter);
     if (!records.length) throw new Error('匯入資料沒有可使用的入圍作品記錄。');
     const grouped = new Map<string, Array<{ record: PosterRecord; image?: string }>>();
+    let posterTemplate: PosterTemplateImage | undefined;
     const unclassified: PosterRecord[] = [];
     for (const record of records) {
       const code = String(record.code || '').trim();
@@ -543,7 +632,14 @@ export default function App() {
       }
       const [domainCode] = domain;
       const list = grouped.get(domainCode) || [];
-      const image = await dataUrlFromRecord(record);
+      let image = typeof record.posterDataUrl === 'string' && record.posterDataUrl.startsWith('data:image/') ? record.posterDataUrl : undefined;
+      if (!image) {
+        const rawImage = await dataUrlFromRecord(record);
+        if (rawImage) {
+          posterTemplate ||= await loadVideoPosterTemplate(templateId);
+          image = await renderImportedPoster(record, rawImage, posterTemplate);
+        }
+      }
       list.push({ record, image });
       grouped.set(domainCode, list);
     }
@@ -570,7 +666,8 @@ export default function App() {
           team: String(record.className || old?.team || ''),
           title: String(record.name || old?.title || '未命名專題'),
           domain: domainName(code),
-          image: image || old?.image,
+          image: image || (old?.isRenderedPoster ? old.image : undefined),
+          isRenderedPoster: Boolean(image || (old?.isRenderedPoster && old.image)),
         };
       });
       const projectName = `${code}｜${domainName(code)}`;
@@ -591,8 +688,8 @@ export default function App() {
   const importPosterDatabase = async () => {
     setError('');
     try {
-      const records = await readPosterDatabase();
-      await importRecords(records);
+      const { records, templateId } = await readPosterDatabase();
+      await importRecords(records, templateId);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '讀取海報資料失敗。');
     }
@@ -602,10 +699,13 @@ export default function App() {
     if (!file) return;
     setError('');
     try {
-      const parsed = JSON.parse(await file.text()) as { records?: PosterRecord[] } | PosterRecord[];
+      const parsed = JSON.parse(await file.text()) as { records?: PosterRecord[]; templateId?: string } | PosterRecord[];
       const records = Array.isArray(parsed) ? parsed : parsed.records;
       if (!Array.isArray(records)) throw new Error('JSON 檔案格式不符；請使用海報製作室匯出的「影片資料 JSON」。');
-      await importRecords(records);
+      if ((Array.isArray(parsed) || !parsed.templateId) && records.some(record => !record.posterDataUrl && (record.imageDataUrl || record.image))) {
+        if (!window.confirm('此舊版 JSON 沒有儲存所選海報模板，將使用原始模板重製海報。若要保留原本選用的模板，請先從新版海報製作室重新匯出 JSON。是否繼續？')) return;
+      }
+      await importRecords(records, Array.isArray(parsed) ? 'original' : parsed.templateId || 'original');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '無法匯入這個 JSON 檔案。');
     }
@@ -743,11 +843,11 @@ export default function App() {
           {stage === 3 && <section className="stage-panel edit-stage"><div className="panel-kicker">STEP 03 · CONTENT</div><div className="edit-heading"><div><h1>編輯影片內容</h1><p className="lead">作品名稱、班級、圖片與順序取自海報製作室；分類依原站 A–F、N 保留，不會重分。</p></div><span className="group-count"><Layers size={15} />{project.cards.length} 件作品</span></div>
             <div className="editor-layout"><div className="editor-main">
               <div className="edit-card"><div className="card-heading"><span className="mini-icon"><Sparkles size={15} /></span><div><h3>展覽領域</h3><small>依原海報編號自動分類，影片工作室不變更原站分類</small></div></div><div className="domain-readonly"><strong>{project.sourceDomainCode || '自訂'}</strong><span>{project.domains.join('、')}</span><span>{project.cards.length} 件作品</span></div></div>
-              <div className="card-heading groups-title"><div><h3>入圍作品卡片</h3><small>已依原站資料帶入；可調整文字、圖片與播放順序</small></div><div className="group-tools"><button className="button secondary small" onClick={() => uploadRef.current?.click()}><Upload size={14} /> 批次上傳圖片</button><input ref={uploadRef} type="file" accept="image/*" multiple hidden onChange={event => { void imageFiles(event.target.files ? Array.from(event.target.files) : null); event.currentTarget.value = ''; }} /></div></div>
+              <div className="card-heading groups-title"><div><h3>入圍作品卡片</h3><small>成品海報文字請在海報製作室修改後重新讀取；可調整圖片及順序</small></div><div className="group-tools"><button className="button secondary small" onClick={() => uploadRef.current?.click()}><Upload size={14} /> 批次上傳圖片</button><input ref={uploadRef} type="file" accept="image/*" multiple hidden onChange={event => { void imageFiles(event.target.files ? Array.from(event.target.files) : null); event.currentTarget.value = ''; }} /></div></div>
               <div className="cards-list">{project.cards.map((card, index) => <article key={card.id} className="group-card" draggable onDragStart={event => { event.dataTransfer.setData('text/plain', String(index)); event.dataTransfer.effectAllowed = 'move'; }} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const from = Number(event.dataTransfer.getData('text/plain')); if (!Number.isInteger(from) || from === index) return; update(current => { const cards = [...current.cards]; const [moved] = cards.splice(from, 1); cards.splice(index, 0, moved); return { ...current, cards }; }); }}>
                 <div className="group-order"><span>{String(index + 1).padStart(2, '0')}</span><button title="上移" aria-label={`第 ${index + 1} 件上移`} disabled={index === 0} onClick={() => update(current => { const cards = [...current.cards]; [cards[index - 1], cards[index]] = [cards[index], cards[index - 1]]; return { ...current, cards }; })}><MoveUp size={15} /></button><button title="下移" aria-label={`第 ${index + 1} 件下移`} disabled={index === project.cards.length - 1} onClick={() => update(current => { const cards = [...current.cards]; [cards[index], cards[index + 1]] = [cards[index + 1], cards[index]]; return { ...current, cards }; })}><MoveDown size={15} /></button></div>
                 <button type="button" className={`image-drop ${card.image ? 'has-image' : ''}`} onClick={() => document.getElementById(`file-${card.id}`)?.click()} aria-label={`為第 ${index + 1} 件選擇圖片`}>{card.image ? <img src={card.image} alt="作品預覽" /> : <><ImagePlus size={20} /><span>加入圖片</span></>}</button><input id={`file-${card.id}`} hidden type="file" accept="image/*" onChange={event => { const file = event.target.files?.[0]; if (file) void imageFiles([file], index); event.currentTarget.value = ''; }} />
-                <div className="group-fields"><label className="field-label">編號<input className="text-input" value={card.code || ''} readOnly /></label><label className="field-label">班級／團隊<input className="text-input" value={card.team} onChange={event => update(current => ({ ...current, cards: current.cards.map(item => item.id === card.id ? { ...item, team: event.target.value } : item) }))} /></label><label className="field-label">作品名稱<input className="text-input" value={card.title} onChange={event => update(current => ({ ...current, cards: current.cards.map(item => item.id === card.id ? { ...item, title: event.target.value } : item) }))} /></label></div>
+                <div className="group-fields"><label className="field-label">編號<input className="text-input" value={card.code || ''} readOnly /></label><label className="field-label">班級／團隊<input className="text-input" value={card.team} readOnly={card.isRenderedPoster} title={card.isRenderedPoster ? '請在海報製作室修改後重新讀取' : undefined} onChange={event => update(current => ({ ...current, cards: current.cards.map(item => item.id === card.id ? { ...item, team: event.target.value } : item) }))} /></label><label className="field-label">作品名稱<input className="text-input" value={card.title} readOnly={card.isRenderedPoster} title={card.isRenderedPoster ? '請在海報製作室修改後重新讀取' : undefined} onChange={event => update(current => ({ ...current, cards: current.cards.map(item => item.id === card.id ? { ...item, title: event.target.value } : item) }))} /></label></div>
                 <button className="icon-button remove-group" title="移除此作品" onClick={() => update(current => ({ ...current, cards: current.cards.filter(item => item.id !== card.id) }))}><Trash2 size={16} /></button>
               </article>)}</div>
               <button className="add-group" onClick={() => update(current => ({ ...current, cards: [...current.cards, blankCard(current.domains[0] || domains[0][1])] }))}><Plus size={17} /> 新增一件作品 <span>{project.cards.length} 件</span></button>
@@ -769,7 +869,7 @@ export default function App() {
             <div className="stage-actions spread"><button className="button secondary" onClick={() => go(3)}><ArrowLeft size={16} /> 上一步</button><button className="button primary" disabled={!selectedEnding} onClick={() => go(5)}>預覽影片 <ArrowRight size={17} /></button></div>
           </section>}
 
-          {stage === 5 && <section className="stage-panel preview-stage"><div className="panel-kicker">STEP 05 · PREVIEW & EXPORT</div><div className="edit-heading"><div><h1>預覽與匯出</h1><p className="lead">預覽與匯出均會真正使用所選原始片頭與片尾 MP4。</p></div><span className="quality-pill">FULL HD · 1080P</span></div>
+          {stage === 5 && <section className="stage-panel preview-stage"><div className="panel-kicker">STEP 05 · PREVIEW & EXPORT</div><div className="edit-heading"><div><h1>預覽與匯出</h1><p className="lead">領域名稱會依片頭畫面直接疊入；原有固定領域字樣會被替換，不再接重複標題卡。</p></div><span className="quality-pill">FULL HD · 1080P</span></div>
             {selectedOpening && selectedEnding && duration > 0 ? <div className="player-wrap"><Player component={ExpoVideoComposition} inputProps={{ project, openingClip: selectedOpening, endingClip: selectedEnding }} durationInFrames={duration} compositionWidth={W} compositionHeight={H} fps={fps} controls loop style={{ width: '100%', aspectRatio: '16/9' }} /></div> : <div className="empty-state"><h3>模板素材尚未就緒</h3><p>請先選擇可用的片頭與片尾影片。</p></div>}
             <div className="preview-meta"><span><Film size={15} />{project.cards.length} 件作品</span><span>{Math.floor(duration / fps / 60)}:{String(Math.floor(duration / fps) % 60).padStart(2, '0')} 分鐘</span><span>1920 × 1080 · 30 FPS · H.264 / AAC</span></div>
             <div className="browser-note"><CircleHelp size={16} /><div><strong>瀏覽器端算繪</strong><span>MP4 會在你的裝置上產生，含所選片頭片尾的影像與音訊；請保持此分頁開啟，時間視電腦效能而定。</span></div></div>
