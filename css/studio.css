@@ -1629,3 +1629,44 @@ body.tour-in-progress #message {
 .studio-header .guide-link {
   transition: background .16s ease, border-color .16s ease;
 }
+
+.preview-head-tools {
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:9px;
+  min-width:0;
+}
+.poster-text-color-control {
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  color:#526a78;
+  font-size:12px;
+  font-weight:650;
+  white-space:nowrap;
+}
+.poster-text-color-control input[type="color"] {
+  display:block;
+  width:36px;
+  height:32px;
+  padding:2px;
+  border:1px solid #d4e0e7;
+  border-radius:7px;
+  background:#fff;
+  cursor:pointer;
+}
+.poster-text-color-control input[type="color"]:focus-visible {
+  outline:2px solid #176fba;
+  outline-offset:2px;
+}
+@media(max-width:760px) {
+  .preview-head { flex-wrap:wrap; gap:10px; }
+  .preview-head-tools { gap:7px; }
+}
+@media(max-width:420px) {
+  .preview-head { padding:13px 12px; }
+  .poster-text-color-control { gap:5px; font-size:11px; }
+  .poster-text-color-control input[type="color"] { width:32px; height:30px; }
+  .preview-head-tools .small { padding:6px 8px; font-size:12px; }
+}

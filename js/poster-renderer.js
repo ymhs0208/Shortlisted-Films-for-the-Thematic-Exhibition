@@ -1,5 +1,10 @@
 const WIDTH = 1920;
 const HEIGHT = 1080;
+export const DEFAULT_POSTER_TEXT_COLOR = '#1559a2';
+
+export function normalizePosterTextColor(value) {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : DEFAULT_POSTER_TEXT_COLOR;
+}
 
 export const posterTemplates = [
   { id: 'original', name: '原始模板', src: './assets/nutc-exhibition-template.png', poster: [1224, 73, 660, 934], fields: [['code', 450, 585, 720, 112], ['className', 450, 760, 720, 112], ['name', 450, 933, 720, 112]] },
@@ -58,7 +63,7 @@ function wrapText(ctx, text, maxWidth) {
   return lines;
 }
 
-function drawText(ctx, text, x, y, maxWidth, maxHeight, maxSize = 72) {
+function drawText(ctx, text, x, y, maxWidth, maxHeight, maxSize = 72, textColor = DEFAULT_POSTER_TEXT_COLOR) {
   let size = maxSize;
   let lines;
   do {
@@ -68,7 +73,7 @@ function drawText(ctx, text, x, y, maxWidth, maxHeight, maxSize = 72) {
     size -= 2;
   } while (size >= 16);
 
-  ctx.fillStyle = '#1559a2';
+  ctx.fillStyle = normalizePosterTextColor(textColor);
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   lines.forEach((line, index) => {
@@ -76,7 +81,7 @@ function drawText(ctx, text, x, y, maxWidth, maxHeight, maxSize = 72) {
   });
 }
 
-export function renderPosterCanvas(canvas, record, template, image) {
+export function renderPosterCanvas(canvas, record, template, image, textColor = DEFAULT_POSTER_TEXT_COLOR) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -91,7 +96,7 @@ export function renderPosterCanvas(canvas, record, template, image) {
   const values = record || {};
   const layout = getPosterTemplate(template && template.exhibitionTemplateId);
   for (const [key, x, y, width, height, maxSize] of layout.fields) {
-    drawText(ctx, values[key], x, y, width, height, maxSize);
+    drawText(ctx, values[key], x, y, width, height, maxSize, textColor);
   }
 
   const [x, y, width, height] = layout.poster;

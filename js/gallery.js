@@ -1,5 +1,5 @@
 import { clearDemoImage, openDB, readState, withoutStarterRecords } from './db.js';
-import { getPosterTemplate, loadPosterTemplate, renderPosterCanvas } from './poster-renderer.js';
+import { DEFAULT_POSTER_TEXT_COLOR, getPosterTemplate, loadPosterTemplate, normalizePosterTextColor, renderPosterCanvas } from './poster-renderer.js';
 
 const GALLERY_DB = {
   unsupported: '這個瀏覽器不支援本機儲存。',
@@ -10,6 +10,7 @@ const GALLERY_DB = {
 const $ = id => document.getElementById(id);
 const safeText = value => String(value ?? '');
 let selectedTemplateId = 'original';
+let selectedTextColor = DEFAULT_POSTER_TEXT_COLOR;
 let records = [];
 let objectUrls = [];
 let templateImage = null;
@@ -32,6 +33,7 @@ async function readRecords() {
   const db = await openDB(GALLERY_DB);
   const saved = await readState(db, GALLERY_DB);
   selectedTemplateId = getPosterTemplate(saved?.templateId).id;
+  selectedTextColor = normalizePosterTextColor(saved?.textColor);
   return withoutStarterRecords(saved?.records).map(clearDemoImage);
 }
 
@@ -65,7 +67,7 @@ function posterPreview(record) {
     const canvas = document.createElement('canvas');
     canvas.width = 960;
     canvas.height = 540;
-    renderPosterCanvas(canvas, record, templateImage, image);
+    renderPosterCanvas(canvas, record, templateImage, image, selectedTextColor);
     return { url: canvas.toDataURL('image/png'), broken };
   })();
   posterCache.set(record, work);
@@ -343,6 +345,7 @@ $('search').addEventListener('input', render);
 (async () => {
   try {
     records = await readRecords();
+    document.dispatchEvent(new CustomEvent('poster-record-count-change', { detail: { count: records.length } }));
     templateImage = await loadPosterTemplate(selectedTemplateId);
     galleryLoading = false;
     render();

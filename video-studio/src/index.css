@@ -2,6 +2,7 @@
 @import "../../css/site-header.css";
 @import "../../css/site-footer.css";
 @import "tailwindcss";
+@import "../../css/mobile-site-menu.css";
 
 :root {
   font-family: Inter, "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
@@ -264,29 +265,28 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .title-animation-thumbnail::before { position: absolute; inset: 0; background: linear-gradient(135deg, #07152d35, #07152d12); content: ''; }
 .title-animation-sample-plate { position: absolute; display: flex; align-items: center; justify-content: center; overflow: hidden; box-sizing: border-box; padding: 0 4px; font-family: "Noto Sans TC", sans-serif; text-align: center; white-space: nowrap; }
 .title-animation-sample-text { display: inline-block; max-width: 100%; overflow: hidden; font-weight: 800; line-height: 1.15; text-overflow: clip; white-space: nowrap; }
-.sample-rise .title-animation-sample-text { transform: translateY(-3px); opacity: .82; }
-.sample-tracking .title-animation-sample-text { letter-spacing: 2px; }
-.sample-slide .title-animation-sample-text { transform: translateX(-5px); opacity: .85; }
-.sample-wipe .title-animation-sample-text { clip-path: inset(0 25% 0 0); }
-.sample-zoom .title-animation-sample-text { transform: scale(1.12); }
-.sample-typewriter .title-animation-sample-text::after { margin-left: 2px; color: #f2c34d; content: '▏'; }
+.title-animation-thumbnail.is-animated .title-animation-sample-text { animation-duration: 780ms; animation-timing-function: cubic-bezier(.2,.72,.22,1); animation-fill-mode: both; }
+.title-animation-thumbnail.is-animated.sample-rise .title-animation-sample-text { animation-name: title-rise-in; }
+.title-animation-thumbnail.is-animated.sample-tracking .title-animation-sample-text { animation-name: title-tracking-in; }
+.title-animation-thumbnail.is-animated.sample-slide .title-animation-sample-text { animation-name: title-slide-in; }
+.title-animation-thumbnail.is-animated.sample-wipe .title-animation-sample-text { animation-name: title-wipe-in; }
+.title-animation-thumbnail.is-animated.sample-zoom .title-animation-sample-text { animation-name: title-zoom-in; }
+.title-animation-thumbnail.is-animated.sample-typewriter .title-animation-sample-text { animation-name: title-type-in; }
+.title-animation-thumbnail.is-animated.sample-typewriter .title-animation-sample-text::after { margin-left: 2px; color: #f2c34d; content: '▏'; animation: title-cursor-blink 700ms step-end 2; }
+@keyframes title-rise-in { from { transform: translateY(85%); opacity: 0; } 72% { transform: translateY(-7%); opacity: 1; } to { transform: translateY(0); opacity: 1; } }
+@keyframes title-tracking-in { from { transform: scale(.94); letter-spacing: .48em; opacity: 0; } to { transform: scale(1); letter-spacing: 0; opacity: 1; } }
+@keyframes title-slide-in { from { transform: translateX(-95%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes title-wipe-in { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
+@keyframes title-zoom-in { from { transform: scale(.48); opacity: 0; } 74% { transform: scale(1.06); opacity: 1; } to { transform: scale(1); opacity: 1; } }
+@keyframes title-type-in { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
+@keyframes title-cursor-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .title-animation-thumbnail.is-animated .title-animation-sample-text, .title-animation-thumbnail.is-animated .title-animation-sample-text::after { animation: none !important; } }
 .title-animation-symbol { position: absolute; right: 5px; bottom: 5px; display: grid; min-width: 19px; height: 19px; place-items: center; padding: 0 3px; border: 1px solid #fff; border-radius: 12px; background: #fff; color: var(--blue); box-shadow: 0 2px 6px #193e5725; font-size: 11px; font-weight: 800; }
 .title-animation-caption { display: flex; flex-direction: column; gap: 3px; padding: 8px 2px 2px; }
 .title-animation-caption strong { color: #31566e; font-size: 11px; }
 .title-animation-caption small { min-height: 14px; color: #7f909d; font-size: 9px; line-height: 1.4; }
 .title-animation-recommended-tag { position: absolute; top: 12px; left: 12px; padding: 4px 6px; border: 1px solid #efd98d; border-radius: 12px; background: #fffaf0ed; color: #805e14; font-size: 8px; font-weight: 750; }
 .title-animation-placeholder { margin-top: 13px; padding: 13px; border: 1px dashed #c8dce6; border-radius: 7px; background: #f7fbfd; color: #718694; font-size: 10px; text-align: center; }
-.title-animation-demo { margin-top: 15px; padding: 11px; border: 1px solid #dce9ef; border-radius: 9px; background: #f8fbfd; }
-.title-demo-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
-.title-demo-heading > span { display: flex; align-items: baseline; gap: 8px; color: #31566e; font-size: 11px; }
-.title-demo-heading small, .title-demo-note { color: #7f909d; font-size: 9px; }
-.title-demo-status { display: flex; align-items: center; gap: 7px; min-height: 27px; margin: 0 0 8px; padding: 6px 8px; border: 1px solid #e3edf2; border-radius: 6px; background: #fff; color: #617d8e; font-size: 10px; }
-.title-demo-status.status-playing { border-color: #cfe6ed; background: #f2faf9; color: #28766d; }
-.title-demo-status.status-done { border-color: #cfe6d7; background: #f3faf5; color: #43815b; }
-.title-demo-status.status-error { border-color: #f0d2cc; background: #fff7f5; color: #9a5148; }
-.activity-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: #20a187; animation: pulse 1s infinite alternate; }
-.title-animation-demo .__remotion-player { overflow: hidden; border: 1px solid #d5e3ec; border-radius: 6px; }
-.title-demo-note { display: block; margin-top: 7px; line-height: 1.5; }
 .card-duration-card { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .card-duration-card h3 { margin: 0 0 4px; color: #31566e; font-size: 13px; }
 .card-duration-card small { color: #7f909d; font-size: 10px; }
@@ -306,14 +306,25 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .transition-sample-card.before { left: 5%; background: linear-gradient(135deg, #176fba, #337f9b); color: #fff; }
 .transition-sample-card.after { right: 5%; background: linear-gradient(135deg, #edc96d, #e1a77e); color: #243f55; }
 .transition-direction { position: absolute; z-index: 2; top: 50%; left: 50%; display: grid; width: 22px; height: 22px; place-items: center; transform: translate(-50%, -50%); border: 1px solid #fff; border-radius: 50%; background: #fff; color: var(--blue); box-shadow: 0 2px 6px #193e5725; font-size: 14px; font-weight: 800; line-height: 1; }
-.effect-fade .after { opacity: .58; }
-.effect-slide .after { transform: translateX(18%); }
-.effect-zoom .after { transform: scale(.72); }
-.effect-direct .after { clip-path: inset(0 0 0 28%); }
-.effect-wipe .after { clip-path: inset(0 38% 0 0); }
-.effect-blur .after { filter: blur(1.5px); opacity: .82; }
-.effect-vertical .after { transform: translateY(18%); }
-.effect-flip .after { transform: perspective(140px) rotateY(-28deg); transform-origin: left center; }
+.transition-sample-card.after { transform: none; opacity: 1; filter: none; clip-path: inset(0); transform-origin: center; }
+.transition-thumbnail.is-animated .after { animation-duration: 820ms; animation-timing-function: cubic-bezier(.2,.72,.22,1); animation-fill-mode: both; }
+.transition-thumbnail.is-animated.effect-fade .after { animation-name: transition-fade-in; }
+.transition-thumbnail.is-animated.effect-slide .after { animation-name: transition-slide-in; }
+.transition-thumbnail.is-animated.effect-zoom .after { animation-name: transition-zoom-in; }
+.transition-thumbnail.is-animated.effect-direct .after { animation-name: transition-direct-cut; animation-duration: 460ms; animation-timing-function: steps(1, end); }
+.transition-thumbnail.is-animated.effect-wipe .after { animation-name: transition-wipe-in; }
+.transition-thumbnail.is-animated.effect-blur .after { animation-name: transition-blur-in; }
+.transition-thumbnail.is-animated.effect-vertical .after { animation-name: transition-vertical-in; }
+.transition-thumbnail.is-animated.effect-flip .after { animation-name: transition-flip-in; }
+@keyframes transition-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes transition-slide-in { from { transform: translateX(22%); opacity: .35; } to { transform: translateX(0); opacity: 1; } }
+@keyframes transition-zoom-in { from { transform: scale(.64); opacity: .45; } 75% { transform: scale(1.05); opacity: 1; } to { transform: scale(1); opacity: 1; } }
+@keyframes transition-direct-cut { from { clip-path: inset(0 0 0 30%); } to { clip-path: inset(0); } }
+@keyframes transition-wipe-in { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
+@keyframes transition-blur-in { from { filter: blur(4px); opacity: .35; } to { filter: blur(0); opacity: 1; } }
+@keyframes transition-vertical-in { from { transform: translateY(22%); opacity: .45; } to { transform: translateY(0); opacity: 1; } }
+@keyframes transition-flip-in { from { transform: perspective(180px) rotateY(-48deg); opacity: .5; } to { transform: perspective(180px) rotateY(0); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .transition-thumbnail.is-animated .after { animation: none !important; } }
 .transition-caption { display: flex; flex-direction: column; gap: 3px; padding: 8px 2px 2px; }
 .transition-caption strong { color: #31566e; font-size: 11px; }
 .transition-caption small { min-height: 15px; color: #7f909d; font-size: 9px; line-height: 1.45; }
@@ -455,8 +466,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .title-animation-option { padding: 5px; }
   .title-animation-option.selected { padding: 4px; }
   .title-animation-recommended-tag { top: 9px; left: 9px; }
-  .title-demo-heading { align-items: flex-start; }
-  .title-demo-heading > span { align-items: flex-start; flex-direction: column; gap: 3px; }
   .card-duration-card { align-items: flex-start; flex-direction: column; gap: 12px; }
   .transition-settings-heading { align-items: flex-start; flex-direction: column; }
   .repeat-control { white-space: normal; }

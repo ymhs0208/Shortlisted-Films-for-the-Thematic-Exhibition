@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="./css/site-header.css">
 <link rel="stylesheet" href="./css/site-footer.css">
 <link rel="stylesheet" href="./css/mobile-layout.css">
+<link rel="stylesheet" href="./css/mobile-site-menu.css">
 </head>
 <body class="guide-page">
 <header class="studio-header">
@@ -22,6 +23,16 @@
     </div>
   </div>
   <nav class="header-actions" aria-label="主要導覽"><a class="guide-link" href="./index.html">回到製作室</a></nav>
+
+  <details class="mobile-site-menu">
+    <summary class="mobile-menu-toggle" aria-label="開啟導覽選單" aria-controls="mobileSiteMenuPanel"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>選單</span></summary>
+    <nav class="mobile-site-menu-panel" id="mobileSiteMenuPanel" aria-label="主要導覽">
+      <a class="guide-link" href="./index.html">海報製作室</a>
+      <a class="guide-link" href="./video-studio/">影片工作室</a>
+      <a class="guide-link album-open" href="./gallery.html">圖片相簿 <span class="header-gallery-count" data-gallery-count>0 張</span></a>
+      <a class="guide-link" href="./guide.html">使用教學</a>
+    </nav>
+  </details>
 </header>
 <main>
   <h1>海報怎麼做？</h1>
@@ -63,5 +74,6 @@
   <span class="site-footer-english" lang="en">National Taichung University of Science and Technology</span>
   <small class="site-footer-copyright">© 2026 國立臺中科技大學 資訊與流通學院專題成果展</small>
 </footer>
+  <script type="module" src="./js/site-header.js"></script>
 </body>
 </html>

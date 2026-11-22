@@ -3,7 +3,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import brandIcon from '../../favicon.png';
 import { Audio, Video } from '@remotion/media';
 import { Player } from '@remotion/player';
-import type { PlayerRef } from '@remotion/player';
 import { canRenderMediaOnWeb, renderMediaOnWeb } from '@remotion/web-renderer';
 import { AbsoluteFill, interpolate, Sequence, useCurrentFrame } from 'remotion';
 import { getPosterTemplate, renderPosterCanvas } from '../../js/poster-renderer.js';
@@ -130,7 +129,6 @@ const introTitleAnimationOptions = [
   { id: 'typewriter', name: '逐字顯現', description: '依序呈現', symbol: 'Aa' },
 ] as const;
 type IntroTitleAnimationId = typeof introTitleAnimationOptions[number]['id'];
-type TitleDemoStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'done' | 'error';
 type BusyAction = 'poster-import' | 'json-import' | 'template-upload' | null;
 const introTitleAnimationRecommendations: Record<string, { animationId: IntroTitleAnimationId; reason: string }> = {
   'intro-1': { animationId: 'rise', reason: '配合地球主視覺，讓領域標題輕柔浮現' },
@@ -176,13 +174,16 @@ type IntroFieldLayout = {
   shadow: string;
   overline?: boolean;
   replacesEmbeddedTitle?: boolean;
+  animationFrames?: number;
 };
 
 // Positions and time windows are matched to the five supplied intro clips.
 // Clips 2–5 have a baked-in "企業智慧化" title; their opaque plates replace that line.
 const introFieldLayouts: Record<string, IntroFieldLayout> = {
   'intro-1': { startSeconds: 0.7, endSeconds: 2.4, left: 21, top: 85.5, width: 58, height: 12.5, background: 'rgba(4, 13, 27, 0.72)', color: '#fff8e8', fontSize: 72, border: '1px solid rgba(214, 182, 110, 0.82)', borderRadius: 30, shadow: '0 8px 32px rgba(0,0,0,0.48)' },
-  'intro-2': { startSeconds: 7.5, endSeconds: 10.2, left: 20, top: 36, width: 60, height: 27, background: '#07172f', color: '#f7c932', fontSize: 90, border: '1px solid rgba(242, 206, 108, 0.68)', borderRadius: 20, shadow: '0 0 28px rgba(0,0,0,0.42)', replacesEmbeddedTitle: true },
+  // The source title begins emerging near 6.57 s and is complete by about 6.9 s.
+  // Start one frame earlier, then match its full appearance with a 9-frame entrance.
+  'intro-2': { startSeconds: 6.55, endSeconds: 10.2, left: 20, top: 36, width: 60, height: 27, background: '#07172f', color: '#f7c932', fontSize: 90, border: '1px solid rgba(242, 206, 108, 0.68)', borderRadius: 20, shadow: '0 0 28px rgba(0,0,0,0.42)', replacesEmbeddedTitle: true, animationFrames: 9 },
   'intro-3': { startSeconds: 7.5, endSeconds: 10.2, left: 30, top: 54, width: 45, height: 16, background: '#081a2c', color: '#ffd13a', fontSize: 66, border: '1px solid rgba(117, 201, 247, 0.42)', borderRadius: 12, shadow: '0 8px 30px rgba(0,0,0,0.4)', replacesEmbeddedTitle: true },
   'intro-4': { startSeconds: 10, endSeconds: 13.6, left: 21, top: 38, width: 58, height: 22, background: '#ffefcd', color: '#073e75', fontSize: 86, border: '0 solid transparent', borderRadius: 0, shadow: 'none', replacesEmbeddedTitle: true },
   'intro-5': { startSeconds: 6.55, endSeconds: 10.2, left: 32, top: 75.5, width: 44, height: 15, background: '#1b1d28', color: '#fff9e8', fontSize: 64, border: '1px solid rgba(240, 215, 160, 0.62)', borderRadius: 14, shadow: '0 8px 30px rgba(0,0,0,0.4)', replacesEmbeddedTitle: true },
@@ -412,9 +413,32 @@ function publicManifest(): Promise<TemplateManifest | null> {
     .catch(() => null);
 }
 
+function usePlayOnceOnView<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [played, setPlayed] = useState(false);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || played) return;
+    if (!('IntersectionObserver' in window)) {
+      setPlayed(true);
+      return;
+    }
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) {
+        setPlayed(true);
+        observer.disconnect();
+      }
+    }, { threshold: 0.2 });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [played]);
+  return { ref, played };
+}
+
 function TransitionThumbnail({ option }: { option: typeof transitionOptions[number] }) {
+  const { ref, played } = usePlayOnceOnView<HTMLDivElement>();
   return (
-    <div className={`transition-thumbnail effect-${option.id}`} aria-hidden="true">
+    <div ref={ref} className={`transition-thumbnail effect-${option.id}${played ? ' is-animated' : ''}`} aria-hidden="true">
       <div className="transition-frame">
         <div className="transition-sample-card before"><span>02</span><b>作品 A</b></div>
         <div className="transition-sample-card after"><span>03</span><b>作品 B</b></div>
@@ -490,7 +514,7 @@ function IntroFieldOverlay({ project, layout, durationInFrames, animationId }: {
   const fontSize = Math.min(layout.fontSize, widthLimitedFontSize, heightLimitedFontSize);
   const fadeFrames = Math.min(7, Math.floor(durationInFrames / 4));
   const opacity = layout.replacesEmbeddedTitle ? 1 : interpolate(frame, [0, fadeFrames, durationInFrames - fadeFrames, durationInFrames], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
-  const animationFrames = Math.min(24, Math.max(10, Math.floor(durationInFrames / 3)));
+  const animationFrames = layout.animationFrames ?? Math.min(24, Math.max(10, Math.floor(durationInFrames / 3)));
   const progress = interpolate(frame, [0, animationFrames], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const titleOpacity = animationId === 'typewriter' ? 1 : progress;
   const titleTransform = animationId === 'rise'
@@ -619,10 +643,11 @@ function TemplateThumbnail({ clip }: { clip?: ClipAsset }) {
 }
 
 function IntroTitleAnimationThumbnail({ option, clip, layout }: { option: typeof introTitleAnimationOptions[number]; clip?: ClipAsset; layout: IntroFieldLayout }) {
+  const { ref, played } = usePlayOnceOnView<HTMLDivElement>();
   const image = clip && !clip.stored ? templateThumbnails[`../templates/thumbnails/${clip.id}.jpg`] : undefined;
   const textFontSize = Math.min(11, Math.max(5, 120 * layout.width / 100 / '領域名稱'.length));
   return <>
-    <div className={`title-animation-thumbnail sample-${option.id}`} style={image ? { backgroundImage: `linear-gradient(130deg, #07152d45, #07152d16), url("${image}")` } : undefined}>
+    <div ref={ref} className={`title-animation-thumbnail sample-${option.id}${played ? ' is-animated' : ''}`} style={image ? { backgroundImage: `linear-gradient(130deg, #07152d45, #07152d16), url("${image}")` } : undefined}>
       <div className="title-animation-sample-plate" style={{ left: `${layout.left}%`, top: `${layout.top}%`, width: `${layout.width}%`, height: `${layout.height}%`, background: layout.background, color: layout.color, border: layout.border, borderRadius: layout.borderRadius, boxShadow: layout.shadow, fontSize: textFontSize }}>
         <span className={`title-animation-sample-text sample-${option.id}`}>領域名稱</span>
       </div>
@@ -635,6 +660,7 @@ function IntroTitleAnimationThumbnail({ option, clip, layout }: { option: typeof
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [project, setProject] = useState<Project | null>(null);
+  const [galleryCount, setGalleryCount] = useState(0);
   const [clipAssets, setClipAssets] = useState<ClipAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(true);
@@ -643,15 +669,11 @@ export default function App() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [previewTemplateId, setPreviewTemplateId] = useState('');
-  const [titleDemoRevision, setTitleDemoRevision] = useState(0);
-  const [titleDemoIntroId, setTitleDemoIntroId] = useState('');
-  const [titleDemoStatus, setTitleDemoStatus] = useState<TitleDemoStatus>('idle');
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [busyProgress, setBusyProgress] = useState({ completed: 0, total: 0 });
   const uploadRef = useRef<HTMLInputElement>(null);
   const clipUploadRef = useRef<HTMLInputElement>(null);
   const jsonImportRef = useRef<HTMLInputElement>(null);
-  const titleDemoPlayerRef = useRef<PlayerRef>(null);
   const clipUrlsRef = useRef(new Map<string, string>());
 
   const refresh = useCallback(async () => {
@@ -667,6 +689,14 @@ export default function App() {
     const timeout = window.setTimeout(() => setNotice(''), 3000);
     return () => window.clearTimeout(timeout);
   }, [notice]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void readPosterDatabase()
+      .then(({ records }) => { if (!cancelled) setGalleryCount(records.length); })
+      .catch(() => { if (!cancelled) setGalleryCount(0); });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -734,35 +764,8 @@ export default function App() {
     clipUrlsRef.current.clear();
   }, []);
 
-  useEffect(() => {
-    const player = titleDemoPlayerRef.current;
-    if (!player || titleDemoRevision === 0 || !titleDemoIntroId) return;
-    const onPlay = () => setTitleDemoStatus('playing');
-    const onPause = () => setTitleDemoStatus(current => current === 'done' ? 'done' : 'paused');
-    const onEnded = () => setTitleDemoStatus('done');
-    const onWaiting = () => setTitleDemoStatus('loading');
-    const onResume = () => setTitleDemoStatus(player.isPlaying() ? 'playing' : 'paused');
-    const onError = () => setTitleDemoStatus('error');
-    player.addEventListener('play', onPlay);
-    player.addEventListener('pause', onPause);
-    player.addEventListener('ended', onEnded);
-    player.addEventListener('waiting', onWaiting);
-    player.addEventListener('resume', onResume);
-    player.addEventListener('error', onError);
-    if (player.isPlaying()) setTitleDemoStatus('playing');
-    return () => {
-      player.removeEventListener('play', onPlay);
-      player.removeEventListener('pause', onPause);
-      player.removeEventListener('ended', onEnded);
-      player.removeEventListener('waiting', onWaiting);
-      player.removeEventListener('resume', onResume);
-      player.removeEventListener('error', onError);
-    };
-  }, [titleDemoIntroId, titleDemoRevision]);
-
   const update = (fn: (current: Project) => Project) => setProject(current => current ? fn(current) : current);
   const go = (stage: number) => {
-    if (stage !== 3) { setTitleDemoRevision(0); setTitleDemoIntroId(''); setTitleDemoStatus('idle'); }
     update(current => ({ ...current, stage }));
   };
   const findClip = (id: string) => clipAssets.find(clip => clip.id === id);
@@ -772,13 +775,6 @@ export default function App() {
   const recommendedTitleAnimation = project ? introTitleAnimationRecommendations[project.intro] : undefined;
   const chooseTitleAnimation = (animationId: IntroTitleAnimationId) => {
     update(current => ({ ...current, titleAnimations: { ...current.titleAnimations, [current.intro]: animationId } }));
-    setTitleDemoIntroId(project?.intro || '');
-    setTitleDemoStatus('loading');
-    setTitleDemoRevision(revision => revision + 1);
-  };
-  const replayTitleDemo = () => {
-    setTitleDemoStatus('loading');
-    setTitleDemoRevision(revision => revision + 1);
   };
   const duration = useMemo(() => {
     if (!project || !selectedOpening || !selectedEnding) return 0;
@@ -787,9 +783,6 @@ export default function App() {
 
   const create = () => {
     const next = makeProject('未命名專案');
-    setTitleDemoRevision(0);
-    setTitleDemoIntroId('');
-    setTitleDemoStatus('idle');
     setProject(next);
   };
 
@@ -1042,7 +1035,7 @@ export default function App() {
 
   return (
     <div className="app-shell min-h-screen antialiased">
-      <header className="studio-header">
+      <header className="studio-header video-studio-header">
         <button type="button" className="exhibition-brand video-brand" onClick={() => setProject(null)} aria-label="返回影片專案首頁">
           <img className="brand-icon" src={brandIcon} alt="" />
           <span className="exhibition-brand-copy">
@@ -1051,13 +1044,22 @@ export default function App() {
             <span className="exhibition-subtitle">影片工作室</span>
           </span>
         </button>
-        <div className="header-actions">
+        <div className={`header-actions${project ? ' has-project-tools' : ''}`}>
           {project && <>
             <div className="project-crumb"><span>/</span><button onClick={() => setProject(null)}>我的專案</button><span>/</span><button className="crumb-current" onClick={rename}>{project.name}</button></div>
             <div className="save-state"><span className={saved ? 'dot' : 'dot busy'} />{saved ? '已儲存至此裝置' : '儲存中…'}</div>
           </>}
           <a className="guide-link" href="../index.html" aria-label="返回海報製作室"><ArrowLeft size={16} />海報製作室</a>
         </div>
+        <details className="mobile-site-menu">
+          <summary className="mobile-menu-toggle" aria-label="開啟導覽選單" aria-controls="mobileSiteMenuPanel"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg><span>選單</span></summary>
+          <nav className="mobile-site-menu-panel" id="mobileSiteMenuPanel" aria-label="主要導覽">
+            <a className="guide-link" href="../index.html">海報製作室</a>
+            <a className="guide-link" href="./">影片工作室</a>
+            <a className="guide-link album-open" href="../gallery.html">圖片相簿 <span className="header-gallery-count">{galleryCount} 張</span></a>
+            <a className="guide-link" href="../guide.html">使用教學</a>
+          </nav>
+        </details>
       </header>
 
       {!project ? <>
@@ -1094,7 +1096,7 @@ export default function App() {
         <section className="project-section">
           <div className="section-head"><div><div className="eyebrow muted">WORKSPACE</div><h2>我的影片專案 <span className="count">{projects.length}</span></h2></div><button className="button secondary" onClick={create}><Plus size={16} /> 新增空白專案</button></div>
           {projects.length === 0 ? <div className="empty-state"><div className="empty-icon"><FolderOpen size={25} /></div><h3>還沒有影片專案</h3><p>點「讀取本來源海報資料」或匯入 JSON，依每個有作品的領域自動建立一支影片。</p></div> : <div className="project-grid">{projects.map(item => <article className="project-card" key={item.id}>
-            <button className="project-open" onClick={() => { setTitleDemoRevision(0); setTitleDemoIntroId(''); setTitleDemoStatus('idle'); setProject(item); }}><div className={`project-art art-${Number(item.intro.replace('intro-', '')) || 0}`}><div className="art-lines" /><Film size={26} /><span>{item.sourceDomainCode ? `${item.sourceDomainCode}｜${domainName(item.sourceDomainCode)}` : 'EXPO MOTION'}</span></div><div className="project-info"><strong>{item.name}</strong><span>{item.cards.length} 件作品 · {new Date(item.updatedAt).toLocaleDateString('zh-TW')}</span></div></button>
+            <button className="project-open" onClick={() => setProject(item)}><div className={`project-art art-${Number(item.intro.replace('intro-', '')) || 0}`}><div className="art-lines" /><Film size={26} /><span>{item.sourceDomainCode ? `${item.sourceDomainCode}｜${domainName(item.sourceDomainCode)}` : 'EXPO MOTION'}</span></div><div className="project-info"><strong>{item.name}</strong><span>{item.cards.length} 件作品 · {new Date(item.updatedAt).toLocaleDateString('zh-TW')}</span></div></button>
             <button className="icon-button delete-project" title="刪除專案" onClick={() => void del(item)}><Trash2 size={16} /></button>
           </article>)}</div>}
         </section>
@@ -1119,7 +1121,7 @@ export default function App() {
           {stage === 2 && <section className="stage-panel"><div className="panel-kicker">STEP 02 · ORIGINAL OPENING CLIPS</div><h1>選擇原始片頭影片</h1><p className="lead">縮圖擷取自原始 MP4；點選方案可播放完整影片。預覽與最終匯出會套用目前領域名稱。</p>
             <div className="template-grid intro-grid">{templateList('intro').map(item => {
               const clip = findClip(item.id);
-              return <button className={`template-card ${project.intro === item.id ? 'selected' : ''}`} key={item.id} disabled={!clip} aria-pressed={project.intro === item.id} onClick={() => { setTitleDemoRevision(0); setTitleDemoIntroId(''); setTitleDemoStatus('idle'); update(current => ({ ...current, intro: item.id })); setPreviewTemplateId(item.id); }}>
+              return <button className={`template-card ${project.intro === item.id ? 'selected' : ''}`} key={item.id} disabled={!clip} aria-pressed={project.intro === item.id} onClick={() => { update(current => ({ ...current, intro: item.id })); setPreviewTemplateId(item.id); }}>
                 <TemplateThumbnail clip={clip} />
                 <span className="template-caption"><strong>{item.title}</strong><small>{clip ? `${clip.durationSeconds.toFixed(2)} 秒 · H.264 MP4${clip.stored ? ' · 本機匯入' : ' · 預載模板'}` : '尚未載入此影片'}</small></span>
                 {project.intro === item.id && <span className="selected-check"><Check size={14} /></span>}
@@ -1145,19 +1147,14 @@ export default function App() {
                   <div><h3>片頭領域名稱進場動畫</h3><small>依目前片頭提供推薦；每支片頭各自記住選擇</small></div>
                   {recommendedTitleAnimation && <span className="title-animation-recommendation"><Sparkles size={13} /> 片頭方案 {project.intro.replace('intro-', '')} 建議：{introTitleAnimationOptions.find(option => option.id === recommendedTitleAnimation.animationId)?.name}</span>}
                 </div>
-                {recommendedTitleAnimation && <p className="title-animation-reason">{recommendedTitleAnimation.reason}。點選縮圖會在原始片頭上實際播放一次，並套用在預覽與匯出。</p>}
+                {recommendedTitleAnimation && <p className="title-animation-reason">{recommendedTitleAnimation.reason}。各縮圖進入畫面時會自動播放一次範例；點選只會選擇效果，並套用於預覽與 MP4 匯出。</p>}
                 <div className="title-animation-options" role="radiogroup" aria-label="選擇片頭領域名稱進場動畫">
-                  {introTitleAnimationOptions.map(option => <button key={option.id} type="button" className={`title-animation-option ${selectedTitleAnimation === option.id ? 'selected' : ''}`} role="radio" aria-checked={selectedTitleAnimation === option.id} aria-label={`播放並選擇${option.name}`} onClick={() => chooseTitleAnimation(option.id)}>
+                  {introTitleAnimationOptions.map(option => <button key={`${project.intro}-${option.id}`} type="button" className={`title-animation-option ${selectedTitleAnimation === option.id ? 'selected' : ''}`} role="radio" aria-checked={selectedTitleAnimation === option.id} aria-label={`選擇${option.name}`} onClick={() => chooseTitleAnimation(option.id)}>
                     <IntroTitleAnimationThumbnail option={option} clip={selectedOpening} layout={introFieldLayouts[project.intro] || introFieldLayouts['intro-1']} />
                     {recommendedTitleAnimation?.animationId === option.id && <span className="title-animation-recommended-tag">此片頭推薦</span>}
                   </button>)}
                 </div>
-                {titleDemoRevision > 0 && titleDemoIntroId === project.intro && selectedOpening ? <div className="title-animation-demo">
-                  <div className="title-demo-heading"><span><strong>片頭實際示範</strong><small>{introTitleAnimationOptions.find(option => option.id === selectedTitleAnimation)?.name} · 播放一次</small></span><button className="button secondary small" disabled={titleDemoStatus === 'loading'} onClick={replayTitleDemo}>{titleDemoStatus === 'loading' ? <><span className="spinner dark" />準備中…</> : '重播片頭示範'}</button></div>
-                  <div className={`title-demo-status status-${titleDemoStatus}`} role="status" aria-live="polite">{titleDemoStatus === 'loading' ? <><span className="spinner dark" />正在載入片頭並準備播放…</> : titleDemoStatus === 'playing' ? <><span className="activity-dot" />示範播放中；動畫完成後會自動停止</> : titleDemoStatus === 'paused' ? '示範已暫停，可使用播放器控制繼續播放。' : titleDemoStatus === 'done' ? <><Check size={13} />示範播放完成</> : titleDemoStatus === 'error' ? '示範播放遇到問題；可按「重播片頭示範」再試一次。' : '示範尚未開始。'}</div>
-                  <Player ref={titleDemoPlayerRef} key={titleDemoRevision} component={IntroTitlePreviewComposition} inputProps={{ project, openingClip: selectedOpening, animationId: selectedTitleAnimation }} durationInFrames={selectedOpening.durationInFrames} compositionWidth={W} compositionHeight={H} fps={fps} autoPlay controls style={{ width: '100%', aspectRatio: '16/9' }} />
-                  <small className="title-demo-note">動畫在領域名稱出現時播放一次；此選擇會用於正式預覽與 MP4 匯出。</small>
-                </div> : <div className="title-animation-placeholder">點選任一縮圖，即可在下方播放這支片頭的實際字效示範。</div>}
+                <p className="title-animation-note">縮圖範例會在首次進入畫面時自動播放一次；點選縮圖只會套用效果，不會開啟額外播放器。每支片頭的選擇分別保存。</p>
               </div>
               <div className="edit-card card-duration-card">
                 <div><h3>入圍作品顯示時間</h3><small>設定每件作品卡片停留秒數，並同步調整預覽與匯出影片長度</small></div>

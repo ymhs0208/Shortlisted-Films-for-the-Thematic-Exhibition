@@ -14,12 +14,13 @@ import {
   imageStem,
   parseImportTable,
 } from './import.js';
-import { getPosterTemplate, loadPosterTemplate, posterTemplates, renderPosterCanvas } from './poster-renderer.js';
+import { DEFAULT_POSTER_TEXT_COLOR, getPosterTemplate, loadPosterTemplate, normalizePosterTextColor, posterTemplates, renderPosterCanvas } from './poster-renderer.js';
 
 const $ = id => document.getElementById(id);
 const blank = blankRecord;
 
 let selectedTemplateId = 'original';
+let selectedTextColor = DEFAULT_POSTER_TEXT_COLOR;
 let templateRequest = 0;
 const templateDialog = $('templateDialog');
 const templateGrid = $('templateGrid');
@@ -82,6 +83,11 @@ $('openTemplates').addEventListener('click', () => {
   updateTemplateUI();
   templateDialog.showModal();
   templateGrid.querySelector('[aria-pressed="true"]')?.focus();
+});
+$('textColor').addEventListener('input', event => {
+  selectedTextColor = normalizePosterTextColor(event.currentTarget.value);
+  draw();
+  scheduleSave();
 });
 
 let records = [];
@@ -186,6 +192,7 @@ function list() {
   $('count').textContent = `${records.length} 筆`;
   $('total').textContent = `(${records.length})`;
   $('galleryTopCount').textContent = `${records.length} 張`;
+  document.dispatchEvent(new CustomEvent('poster-record-count-change', { detail: { count: records.length } }));
   updateDomainStats();
   const query = $('recordSearch').value.trim().toLocaleLowerCase();
   const items = records.map((record, index) => {
@@ -334,7 +341,7 @@ $('confirmClearAll').onclick = async () => {
   }
 };
 
-function paint(canvas, record) { renderPosterCanvas(canvas, record, base, record.image); }
+function paint(canvas, record) { renderPosterCanvas(canvas, record, base, record.image, selectedTextColor); }
 function draw() {
   if (base.complete && base.naturalWidth) paint($('canvas'), current() || blank());
 }
@@ -769,6 +776,7 @@ $('exportVideoData').onclick = () => runOperation($('exportVideoData'), '正在�
       version: 1,
       exportedAt: new Date().toISOString(),
       templateId: selectedTemplateId,
+      textColor: selectedTextColor,
       domains: DOMAINS.map(([code, name]) => ({ code, name })),
       records: rows,
     };
@@ -908,6 +916,7 @@ async function persist() {
   const db = await openDB();
   const value = {
     templateId: selectedTemplateId,
+    textColor: selectedTextColor,
     records: records.map(serialRecord),
     selected,
     deleteHistory: deleteHistory.map(item => ({ index: item.index, record: serialRecord(item.record) })),
@@ -950,6 +959,8 @@ async function restoreState() {
   const db = await openDB();
   const saved = await readState(db);
   if (!saved) return false;
+  selectedTextColor = normalizePosterTextColor(saved.textColor);
+  $('textColor').value = selectedTextColor;
   if (saved.templateId && saved.templateId !== 'original') {
     try {
       base = await loadPosterTemplate(saved.templateId);
