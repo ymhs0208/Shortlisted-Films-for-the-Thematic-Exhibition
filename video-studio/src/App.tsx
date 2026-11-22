@@ -413,35 +413,12 @@ function publicManifest(): Promise<TemplateManifest | null> {
     .catch(() => null);
 }
 
-function usePlayOnceOnView<T extends HTMLElement>() {
-  const ref = useRef<T | null>(null);
-  const [played, setPlayed] = useState(false);
-  useEffect(() => {
-    const element = ref.current;
-    if (!element || played) return;
-    if (!('IntersectionObserver' in window)) {
-      setPlayed(true);
-      return;
-    }
-    const observer = new IntersectionObserver(entries => {
-      if (entries.some(entry => entry.isIntersecting)) {
-        setPlayed(true);
-        observer.disconnect();
-      }
-    }, { threshold: 0.2 });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [played]);
-  return { ref, played };
-}
-
-function TransitionThumbnail({ option }: { option: typeof transitionOptions[number] }) {
-  const { ref, played } = usePlayOnceOnView<HTMLDivElement>();
+function TransitionThumbnail({ option, active, run }: { option: typeof transitionOptions[number]; active: boolean; run: number }) {
   return (
-    <div ref={ref} className={`transition-thumbnail effect-${option.id}${played ? ' is-animated' : ''}`} aria-hidden="true">
+    <div className={`transition-thumbnail effect-${option.id}${active ? ' is-animated' : ''}`} aria-hidden="true">
       <div className="transition-frame">
         <div className="transition-sample-card before"><span>02</span><b>作品 A</b></div>
-        <div className="transition-sample-card after"><span>03</span><b>作品 B</b></div>
+        <div key={active ? run : 0} className="transition-sample-card after"><span>03</span><b>作品 B</b></div>
         <span className="transition-direction">{option.id === 'vertical' ? '↑' : option.id === 'flip' ? '↻' : '→'}</span>
       </div>
       <span className="transition-caption"><strong>{option.value}</strong><small>{option.description}</small></span>
@@ -642,14 +619,13 @@ function TemplateThumbnail({ clip }: { clip?: ClipAsset }) {
   </div>;
 }
 
-function IntroTitleAnimationThumbnail({ option, clip, layout }: { option: typeof introTitleAnimationOptions[number]; clip?: ClipAsset; layout: IntroFieldLayout }) {
-  const { ref, played } = usePlayOnceOnView<HTMLDivElement>();
+function IntroTitleAnimationThumbnail({ option, clip, layout, active, run }: { option: typeof introTitleAnimationOptions[number]; clip?: ClipAsset; layout: IntroFieldLayout; active: boolean; run: number }) {
   const image = clip && !clip.stored ? templateThumbnails[`../templates/thumbnails/${clip.id}.jpg`] : undefined;
   const textFontSize = Math.min(11, Math.max(5, 120 * layout.width / 100 / '領域名稱'.length));
   return <>
-    <div ref={ref} className={`title-animation-thumbnail sample-${option.id}${played ? ' is-animated' : ''}`} style={image ? { backgroundImage: `linear-gradient(130deg, #07152d45, #07152d16), url("${image}")` } : undefined}>
+    <div className={`title-animation-thumbnail sample-${option.id}${active ? ' is-animated' : ''}`} style={image ? { backgroundImage: `linear-gradient(130deg, #07152d45, #07152d16), url("${image}")` } : undefined}>
       <div className="title-animation-sample-plate" style={{ left: `${layout.left}%`, top: `${layout.top}%`, width: `${layout.width}%`, height: `${layout.height}%`, background: layout.background, color: layout.color, border: layout.border, borderRadius: layout.borderRadius, boxShadow: layout.shadow, fontSize: textFontSize }}>
-        <span className={`title-animation-sample-text sample-${option.id}`}>領域名稱</span>
+        <span key={active ? run : 0} className={`title-animation-sample-text sample-${option.id}`}>領域名稱</span>
       </div>
       <span className="title-animation-symbol" aria-hidden="true">{option.symbol}</span>
     </div>
@@ -669,6 +645,8 @@ export default function App() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [previewTemplateId, setPreviewTemplateId] = useState('');
+  const [titleAnimationDemo, setTitleAnimationDemo] = useState<{ introId: string; animationId: IntroTitleAnimationId; run: number } | null>(null);
+  const [transitionDemo, setTransitionDemo] = useState<{ id: string; run: number } | null>(null);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [busyProgress, setBusyProgress] = useState({ completed: 0, total: 0 });
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -775,6 +753,11 @@ export default function App() {
   const recommendedTitleAnimation = project ? introTitleAnimationRecommendations[project.intro] : undefined;
   const chooseTitleAnimation = (animationId: IntroTitleAnimationId) => {
     update(current => ({ ...current, titleAnimations: { ...current.titleAnimations, [current.intro]: animationId } }));
+    if (project) setTitleAnimationDemo(current => ({ introId: project.intro, animationId, run: (current?.run ?? 0) + 1 }));
+  };
+  const chooseTransition = (option: typeof transitionOptions[number]) => {
+    update(current => ({ ...current, transition: option.value }));
+    setTransitionDemo(current => ({ id: option.id, run: (current?.run ?? 0) + 1 }));
   };
   const duration = useMemo(() => {
     if (!project || !selectedOpening || !selectedEnding) return 0;
@@ -1147,14 +1130,14 @@ export default function App() {
                   <div><h3>片頭領域名稱進場動畫</h3><small>依目前片頭提供推薦；每支片頭各自記住選擇</small></div>
                   {recommendedTitleAnimation && <span className="title-animation-recommendation"><Sparkles size={13} /> 片頭方案 {project.intro.replace('intro-', '')} 建議：{introTitleAnimationOptions.find(option => option.id === recommendedTitleAnimation.animationId)?.name}</span>}
                 </div>
-                {recommendedTitleAnimation && <p className="title-animation-reason">{recommendedTitleAnimation.reason}。各縮圖進入畫面時會自動播放一次範例；點選只會選擇效果，並套用於預覽與 MP4 匯出。</p>}
+                {recommendedTitleAnimation && <p className="title-animation-reason">{recommendedTitleAnimation.reason}。點選縮圖會在該範例中播放效果並套用選擇；預覽與 MP4 匯出都會使用此效果。</p>}
                 <div className="title-animation-options" role="radiogroup" aria-label="選擇片頭領域名稱進場動畫">
                   {introTitleAnimationOptions.map(option => <button key={`${project.intro}-${option.id}`} type="button" className={`title-animation-option ${selectedTitleAnimation === option.id ? 'selected' : ''}`} role="radio" aria-checked={selectedTitleAnimation === option.id} aria-label={`選擇${option.name}`} onClick={() => chooseTitleAnimation(option.id)}>
-                    <IntroTitleAnimationThumbnail option={option} clip={selectedOpening} layout={introFieldLayouts[project.intro] || introFieldLayouts['intro-1']} />
+                    <IntroTitleAnimationThumbnail option={option} clip={selectedOpening} layout={introFieldLayouts[project.intro] || introFieldLayouts['intro-1']} active={titleAnimationDemo?.introId === project.intro && titleAnimationDemo.animationId === option.id} run={titleAnimationDemo?.introId === project.intro && titleAnimationDemo.animationId === option.id ? titleAnimationDemo.run : 0} />
                     {recommendedTitleAnimation?.animationId === option.id && <span className="title-animation-recommended-tag">此片頭推薦</span>}
                   </button>)}
                 </div>
-                <p className="title-animation-note">縮圖範例會在首次進入畫面時自動播放一次；點選縮圖只會套用效果，不會開啟額外播放器。每支片頭的選擇分別保存。</p>
+                <p className="title-animation-note">點擊某個縮圖會只播放該範例；其他縮圖不會自動播放，也不會開啟額外播放器。每支片頭的選擇分別保存。</p>
               </div>
               <div className="edit-card card-duration-card">
                 <div><h3>入圍作品顯示時間</h3><small>設定每件作品卡片停留秒數，並同步調整預覽與匯出影片長度</small></div>
@@ -1162,11 +1145,11 @@ export default function App() {
               </div>
               <div className="edit-card transition-card">
                 <div className="transition-settings-heading">
-                  <div><h3>轉場動畫</h3><small>選擇作品卡片轉場，並設定每幾件作品重複一次</small></div>
+                  <div><h3>轉場動畫</h3><small>點擊縮圖預覽單一效果；可設定每幾件作品重複一次</small></div>
                   <label className="repeat-control"><span>每</span><input className="text-input repeat-input" type="number" min={1} max={maxTransitionRepeatEvery} step={1} aria-label="轉場動畫每幾件作品循環一次" value={getTransitionRepeatEvery(project.transitionRepeatEvery)} onChange={event => update(current => ({ ...current, transitionRepeatEvery: getTransitionRepeatEvery(Number(event.target.value)) }))} /><span>件重複一次</span></label>
                 </div>
                 <div className="transition-options" role="radiogroup" aria-label="選擇轉場動畫">
-                  {transitionOptions.map(option => <button key={option.value} type="button" className={`transition-option ${project.transition === option.value ? 'selected' : ''}`} role="radio" aria-checked={project.transition === option.value} onClick={() => update(current => ({ ...current, transition: option.value }))}><TransitionThumbnail option={option} /></button>)}
+                  {transitionOptions.map(option => <button key={option.value} type="button" className={`transition-option ${project.transition === option.value ? 'selected' : ''}`} role="radio" aria-checked={project.transition === option.value} onClick={() => chooseTransition(option)}><TransitionThumbnail option={option} active={transitionDemo?.id === option.id} run={transitionDemo?.id === option.id ? transitionDemo.run : 0} /></button>)}
                 </div>
                 {getTransitionRepeatEvery(project.transitionRepeatEvery) > 1 && <p className="transition-repeat-note">效果從第 1 件作品開始，每 {getTransitionRepeatEvery(project.transitionRepeatEvery)} 件播放一次；其餘作品直接切換。</p>}
               </div>
