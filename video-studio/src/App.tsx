@@ -1086,9 +1086,23 @@ export default function App() {
         </section>
 
         <section className="clip-library">
-          <div><div className="eyebrow muted">SOURCE VIDEO TEMPLATES</div><h2>片頭／片尾原始影片</h2><p>目前已載入片頭 {introCount}/5、片尾 {outroCount}/4；可直接預覽與匯出，模板影片保留原音訊。</p></div>
-          <div className="clip-library-actions"><span className={`clip-count ${introCount === 5 && outroCount === 4 ? 'complete' : ''}`}>{introCount + outroCount} / 9 支</span><button className="button secondary" disabled={busyAction !== null} aria-busy={busyAction === 'template-upload'} onClick={() => clipUploadRef.current?.click()}>{busyAction === 'template-upload' ? <><span className="spinner dark" />更新中 {busyProgress.completed}/{busyProgress.total}</> : <><Upload size={15} /> 更新／補上 MP4</>}</button><input ref={clipUploadRef} type="file" accept="video/mp4,.mp4" multiple hidden onChange={event => { void uploadTemplates(event.target.files ? Array.from(event.target.files) : null); event.currentTarget.value = ''; }} /></div>
-          <div className="clip-template-list">{allTemplateDefinitions.map(item => <span key={item.id} className={findClip(item.id) ? 'clip-ready' : 'clip-missing'}><i />{item.title}</span>)}</div>
+          <div className="clip-library-top">
+            <div className="clip-library-copy"><div className="eyebrow muted">SOURCE VIDEO TEMPLATES</div><h2>片頭／片尾原始影片</h2><p>九支原始影片都可預覽；建立專案後，能在片頭與片尾步驟選用。影片保留原音訊。</p></div>
+            <div className="clip-library-meta"><span className={`clip-count ${introCount === 5 && outroCount === 4 ? 'complete' : ''}`}>{introCount + outroCount} / 9 支已就緒</span><button className="button secondary" disabled={busyAction !== null} aria-busy={busyAction === 'template-upload'} onClick={() => clipUploadRef.current?.click()}>{busyAction === 'template-upload' ? <><span className="spinner dark" />更新中 {busyProgress.completed}/{busyProgress.total}</> : <><Upload size={15} /> 更新／補上 MP4</>}</button><input ref={clipUploadRef} type="file" accept="video/mp4,.mp4" multiple hidden onChange={event => { void uploadTemplates(event.target.files ? Array.from(event.target.files) : null); event.currentTarget.value = ''; }} /></div>
+          </div>
+          <div className="clip-library-groups">
+            {(['intro', 'outro'] as const).map(kind => <section className={`clip-group ${kind}`} key={kind} aria-label={kind === 'intro' ? '片頭影片模板' : '片尾影片模板'}>
+              <div className="clip-group-heading"><div><strong>{kind === 'intro' ? '片頭動畫' : '片尾動畫'}</strong><small>{kind === 'intro' ? '開場主視覺' : '作品結尾收束'}</small></div><span>{kind === 'intro' ? introCount : outroCount} / {kind === 'intro' ? 5 : 4}</span></div>
+              <div className="clip-card-grid">{templateList(kind).map(item => {
+                const clip = findClip(item.id);
+                return <button type="button" className={`home-clip-card ${previewTemplateId === item.id ? 'selected' : ''}`} key={item.id} disabled={!clip} aria-pressed={previewTemplateId === item.id} onClick={() => setPreviewTemplateId(item.id)}>
+                  <div className="home-clip-visual"><TemplateThumbnail clip={clip} />{clip && <span className="clip-duration">{clip.durationSeconds.toFixed(1)} 秒</span>}{previewTemplateId === item.id && <span className="clip-preview-indicator"><Check size={11} />預覽中</span>}</div>
+                  <span className="home-clip-name">{item.title}</span><small>{clip ? '原始影片 · 可選用' : '尚未載入'}</small>
+                </button>;
+              })}</div>
+            </section>)}
+          </div>
+          {previewTemplateId && findClip(previewTemplateId) && <div className="clip-library-preview"><div><strong>{findClip(previewTemplateId)?.kind === 'intro' ? '片頭' : '片尾'}實際預覽</strong><span>{findClip(previewTemplateId)?.name} · {findClip(previewTemplateId)?.durationSeconds.toFixed(2)} 秒</span></div><video key={findClip(previewTemplateId)?.src} src={findClip(previewTemplateId)?.src} controls playsInline preload="metadata" /></div>}
         </section>
 
         {error && <div className="error-box"><X size={17} /><span>{error}</span></div>}
