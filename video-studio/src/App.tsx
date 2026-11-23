@@ -4,7 +4,7 @@ import brandIcon from '../../favicon.png';
 import { Audio, Video } from '@remotion/media';
 import { Player } from '@remotion/player';
 import { canRenderMediaOnWeb, renderMediaOnWeb } from '@remotion/web-renderer';
-import { AbsoluteFill, interpolate, Sequence, useCurrentFrame } from 'remotion';
+import { AbsoluteFill, Freeze, interpolate, Sequence, useCurrentFrame } from 'remotion';
 import { getPosterTemplate, renderPosterCanvas } from '../../js/poster-renderer.js';
 import shortlistedMusicUrl from '../assets/shortlisted-background.m4a?url';
 import {
@@ -172,20 +172,21 @@ type IntroFieldLayout = {
   border: string;
   borderRadius: number;
   shadow: string;
+  textShadow?: string;
   overline?: boolean;
   replacesEmbeddedTitle?: boolean;
   animationFrames?: number;
 };
 
 // Positions and time windows are matched to the five supplied intro clips.
-// Clips 2–5 have a baked-in "企業智慧化" title; their opaque plates replace that line.
+// Clips 2–5 have a baked-in "企業智慧化" title; their masks replace that line.
 const introFieldLayouts: Record<string, IntroFieldLayout> = {
   'intro-1': { startSeconds: 0.7, endSeconds: 2.4, left: 21, top: 85.5, width: 58, height: 12.5, background: 'rgba(4, 13, 27, 0.72)', color: '#fff8e8', fontSize: 72, border: '1px solid rgba(214, 182, 110, 0.82)', borderRadius: 30, shadow: '0 8px 32px rgba(0,0,0,0.48)' },
   // The source title begins emerging near 6.57 s and is complete by about 6.9 s.
   // Start one frame earlier, then match its full appearance with a 9-frame entrance.
   'intro-2': { startSeconds: 6.55, endSeconds: 10.2, left: 20, top: 36, width: 60, height: 27, background: '#07172f', color: '#f7c932', fontSize: 90, border: '1px solid rgba(242, 206, 108, 0.68)', borderRadius: 20, shadow: '0 0 28px rgba(0,0,0,0.42)', replacesEmbeddedTitle: true, animationFrames: 9 },
-  'intro-3': { startSeconds: 7.5, endSeconds: 10.2, left: 30, top: 54, width: 45, height: 16, background: '#081a2c', color: '#ffd13a', fontSize: 66, border: '1px solid rgba(117, 201, 247, 0.42)', borderRadius: 12, shadow: '0 8px 30px rgba(0,0,0,0.4)', replacesEmbeddedTitle: true },
-  'intro-4': { startSeconds: 10, endSeconds: 13.6, left: 21, top: 38, width: 58, height: 22, background: '#ffefcd', color: '#073e75', fontSize: 86, border: '0 solid transparent', borderRadius: 0, shadow: 'none', replacesEmbeddedTitle: true },
+  'intro-3': { startSeconds: 6.35, endSeconds: 9.3, left: 29, top: 47, width: 42, height: 14, background: 'radial-gradient(ellipse at center, rgba(7, 20, 44, 0.93) 0%, rgba(7, 20, 44, 0.72) 61%, rgba(7, 20, 44, 0) 100%)', color: '#ffd13a', fontSize: 86, border: '0 solid transparent', borderRadius: 999, shadow: 'none', textShadow: '0 0 20px rgba(255, 204, 54, 0.28), 0 2px 10px rgba(0, 0, 0, 0.45)', animationFrames: 9 },
+  'intro-4': { startSeconds: 9.7, endSeconds: 12.55, left: 30, top: 49, width: 40, height: 13, background: '#fef1cf', color: '#073e75', fontSize: 86, border: '0 solid transparent', borderRadius: 999, shadow: 'none', textShadow: '0 2px 10px rgba(7, 62, 117, 0.18)', animationFrames: 9 },
   'intro-5': { startSeconds: 6.55, endSeconds: 10.2, left: 32, top: 75.5, width: 44, height: 15, background: '#1b1d28', color: '#fff9e8', fontSize: 64, border: '1px solid rgba(240, 215, 160, 0.62)', borderRadius: 14, shadow: '0 8px 30px rgba(0,0,0,0.4)', replacesEmbeddedTitle: true },
 };
 
@@ -426,10 +427,10 @@ function TransitionThumbnail({ option, active, run }: { option: typeof transitio
   );
 }
 
-function CardScene({ card, index, total, transition, durationInFrames }: { card: Card; index: number; total: number; transition: string; durationInFrames: number }) {
+function CardScene({ card, index, total, transition, durationInFrames, transparentBackground = false, boundaryOut = false }: { card: Card; index: number; total: number; transition: string; durationInFrames: number; transparentBackground?: boolean; boundaryOut?: boolean }) {
   const frame = useCurrentFrame();
   const fadeInFrames = Math.min(Math.round(fps * 0.35), Math.max(1, Math.floor(durationInFrames / 4)));
-  const fadeOutFrames = fadeInFrames;
+  const fadeOutFrames = boundaryOut ? Math.min(12, fadeInFrames + 2) : fadeInFrames;
   const enterFrames = Math.min(12, Math.max(1, Math.floor(durationInFrames / 4)));
   const exitStart = durationInFrames - fadeOutFrames - 1;
   const fade = interpolate(frame, [0, fadeInFrames, exitStart, durationInFrames - 1], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
@@ -457,7 +458,7 @@ function CardScene({ card, index, total, transition, durationInFrames }: { card:
     ? `blur(${interpolate(frame, [0, enterFrames, exitStart, durationInFrames - 1], [12, 0, 0, 12], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })}px)`
     : undefined;
   return (
-    <AbsoluteFill style={{ background: '#07152d', color: '#fff', fontFamily: 'Arial, "Noto Sans TC", sans-serif', overflow: 'hidden' }}>
+    <AbsoluteFill style={{ background: transparentBackground ? 'transparent' : '#07152d', color: '#fff', fontFamily: 'Arial, "Noto Sans TC", sans-serif', overflow: 'hidden' }}>
       {card.image && !showRenderedPoster && <img src={card.image} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.24 }} />}
       <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', padding: 90, textAlign: 'center', opacity, transform, clipPath, filter, transformOrigin: transition === '立體翻轉' ? 'left center' : undefined }}>
         {showRenderedPoster && <img src={card.image} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', background: '#fff' }} />}
@@ -509,7 +510,7 @@ function IntroFieldOverlay({ project, layout, durationInFrames, animationId }: {
   return (
     <div style={{ position: 'absolute', left: `${layout.left}%`, top: `${layout.top}%`, width: `${layout.width}%`, height: `${layout.height}%`, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: layout.overline ? 5 : 0, padding: layout.width < 35 ? '8px 16px' : '12px 28px', overflow: 'hidden', background: layout.background, color: layout.color, border: layout.border, borderRadius: layout.borderRadius, boxShadow: layout.shadow, opacity, fontFamily: 'Arial, "Noto Sans TC", sans-serif', textAlign: 'center' }}>
       {layout.overline && <span style={{ fontSize: Math.max(14, fontSize * 0.38), fontWeight: 600, letterSpacing: 4, lineHeight: 1.1, opacity: 0.78 }}>本片領域</span>}
-      <span aria-label={fieldName} style={{ display: 'inline-flex', fontSize, fontWeight: 800, lineHeight: 1.2, letterSpacing: animatedLetterSpacing, whiteSpace: 'nowrap', textShadow: layout.background.startsWith('rgba') ? '0 2px 12px rgba(0,0,0,0.28)' : 'none', opacity: titleOpacity, transform: titleTransform, clipPath: titleClipPath }}>
+      <span aria-label={fieldName} style={{ display: 'inline-flex', fontSize, fontWeight: 800, lineHeight: 1.2, letterSpacing: animatedLetterSpacing, whiteSpace: 'nowrap', textShadow: layout.textShadow || (layout.background.startsWith('rgba') ? '0 2px 12px rgba(0,0,0,0.28)' : 'none'), opacity: titleOpacity, transform: titleTransform, clipPath: titleClipPath }}>
         {animationId === 'typewriter' ? chars.map((char, index) => {
           const characterProgress = interpolate(frame, [index * characterStep, (index + 1) * characterStep], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
           return <span key={`${char}-${index}`} style={{ opacity: characterProgress, transform: `translateY(${(1 - characterProgress) * 5}px)` }}>{char}</span>;
@@ -534,25 +535,42 @@ function IntroTitlePreviewComposition({ project, openingClip, animationId }: { p
   );
 }
 
+function OutroClipWithTailFrame({ clip }: { clip: ClipAsset }) {
+  const frame = useCurrentFrame();
+  const video = <Video src={clip.src} durationInFrames={clip.durationInFrames} style={{ width: '100%', height: '100%', objectFit: 'cover' }} volume={1} />;
+  return frame < clip.durationInFrames ? video : <Freeze frame={clip.durationInFrames - 1}>{video}</Freeze>;
+}
+
 export function ExpoVideoComposition({ project, openingClip, endingClip }: { project: Project; openingClip: ClipAsset; endingClip: ClipAsset }) {
   const openingFrames = openingClip.durationInFrames;
   const cardsStart = openingFrames;
   const cardDurationInFrames = getCardDurationInFrames(project.cardDurationSeconds);
   const cardsDurationInFrames = project.cards.length * cardDurationInFrames;
-  const endingStart = cardsStart + cardsDurationInFrames;
+  const boundaryOverlapFrames = project.cards.length > 0 ? Math.min(12, cardDurationInFrames) : 0;
+  const endingStart = cardsStart + cardsDurationInFrames - boundaryOverlapFrames;
   const musicFadeFrames = Math.min(Math.round(fps * 1.2), Math.floor(cardsDurationInFrames / 4));
   const transitionRepeatEvery = getTransitionRepeatEvery(project.transitionRepeatEvery);
+  const boundaryTransition = project.transition === '直接切換' ? '淡入淡出' : project.transition;
   const titleAnimationId = getIntroTitleAnimationId(project, openingClip.id);
   return (
     <AbsoluteFill style={{ backgroundColor: '#07152d', overflow: 'hidden' }}>
       <Sequence from={0} durationInFrames={openingFrames} name="原始片頭">
         <IntroTitlePreviewComposition project={project} openingClip={openingClip} animationId={titleAnimationId} />
       </Sequence>
-      {project.cards.map((card, index) => (
-        <Sequence key={card.id} from={cardsStart + index * cardDurationInFrames} durationInFrames={cardDurationInFrames} name={`作品 ${index + 1}`}>
-          <CardScene card={card} index={index} total={project.cards.length} transition={index % transitionRepeatEvery === 0 ? project.transition : '直接切換'} durationInFrames={cardDurationInFrames} />
-        </Sequence>
-      ))}
+      {boundaryOverlapFrames > 0 && <Sequence from={endingStart} durationInFrames={endingClip.durationInFrames + boundaryOverlapFrames} name="片尾轉場與原始片尾">
+        <OutroClipWithTailFrame clip={endingClip} />
+      </Sequence>}
+      {project.cards.map((card, index) => {
+        const isFirst = index === 0;
+        const isLast = index === project.cards.length - 1;
+        const overlapAtStart = isFirst ? boundaryOverlapFrames : 0;
+        const transition = isFirst || isLast
+          ? boundaryTransition
+          : index % transitionRepeatEvery === 0 ? project.transition : '直接切換';
+        return <Sequence key={card.id} from={cardsStart + index * cardDurationInFrames - overlapAtStart} durationInFrames={cardDurationInFrames + overlapAtStart} name={`作品 ${index + 1}`}>
+          <CardScene card={card} index={index} total={project.cards.length} transition={transition} durationInFrames={cardDurationInFrames + overlapAtStart} transparentBackground={isFirst || isLast} boundaryOut={isLast} />
+        </Sequence>;
+      })}
       {cardsDurationInFrames > 0 && <Sequence from={cardsStart} durationInFrames={cardsDurationInFrames} name="入圍作品背景音樂">
         <Audio
           src={shortlistedMusicUrl}
@@ -560,9 +578,9 @@ export function ExpoVideoComposition({ project, openingClip, endingClip }: { pro
           volume={frame => interpolate(frame, [0, musicFadeFrames, cardsDurationInFrames - musicFadeFrames, cardsDurationInFrames - 1], [0, 0.35, 0.35, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })}
         />
       </Sequence>}
-      <Sequence from={endingStart} durationInFrames={endingClip.durationInFrames} name="原始片尾">
+      {boundaryOverlapFrames === 0 && <Sequence from={endingStart} durationInFrames={endingClip.durationInFrames} name="原始片尾">
         <Video src={endingClip.src} durationInFrames={endingClip.durationInFrames} style={{ width: '100%', height: '100%', objectFit: 'cover' }} volume={1} />
-      </Sequence>
+      </Sequence>}
     </AbsoluteFill>
   );
 }
