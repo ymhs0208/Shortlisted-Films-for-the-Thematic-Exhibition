@@ -7,6 +7,9 @@ import { canRenderMediaOnWeb, renderMediaOnWeb } from '@remotion/web-renderer';
 import { AbsoluteFill, Freeze, interpolate, Sequence, useCurrentFrame } from 'remotion';
 import { getPosterTemplate, renderPosterCanvas } from '../../js/poster-renderer.js';
 import shortlistedMusicUrl from '../assets/shortlisted-background.m4a?url';
+import ascensionMusicUrl from '../assets/scott-buckley-ascension.mp3?url';
+import victorLuxMusicUrl from '../assets/scott-buckley-victor-lux.mp3?url';
+import riseAboveMusicUrl from '../assets/scott-buckley-rise-above.mp3?url';
 import {
   ArrowLeft,
   ArrowRight,
@@ -52,6 +55,7 @@ type Project = {
   transition: string;
   transitionSequence?: string[];
   transitionRepeatEvery: number;
+  musicTrackId?: MusicTrackId;
   cardDurationSeconds: number;
   cards: Card[];
   sourceDomainCode?: string;
@@ -97,6 +101,14 @@ const POSTER_KEY = 'app';
 const fps = 30;
 const W = 1920;
 const H = 1080;
+type MusicTrackId = 'original' | 'ascension' | 'victor-lux' | 'rise-above';
+type MusicTrack = { id: MusicTrackId; title: string; description: string; attribution?: string; src: string; sourceUrl?: string };
+const musicTracks: MusicTrack[] = [
+  { id: 'original', title: '原有配樂', description: '維持你原本提供的背景音樂。', src: shortlistedMusicUrl },
+  { id: 'ascension', title: 'Ascension', description: '宏闊管弦樂帶著些微憂傷與希望，合成器推動旋律前行，適合呈現克服逆境的情緒。', attribution: "'Ascension' by Scott Buckley - released under CC-BY 4.0. www.scottbuckley.com.au", src: ascensionMusicUrl, sourceUrl: 'https://www.scottbuckley.com.au/library/ascension/' },
+  { id: 'victor-lux', title: 'Victor Lux', description: '莊嚴、鼓舞人心的管弦樂；銅管、合唱與高揚弦樂，最後以宏大的交響樂收束。', attribution: "'Victor Lux' by Scott Buckley - released under CC-BY 4.0. www.scottbuckley.com.au", src: victorLuxMusicUrl, sourceUrl: 'https://www.scottbuckley.com.au/library/victor-lux/' },
+  { id: 'rise-above', title: 'Rise Above', description: '振奮、鼓舞人心的管弦樂，帶來向上突破、鼓起動力的氛圍。', attribution: "'Rise Above' by Scott Buckley - released under CC-BY 4.0. www.scottbuckley.com.au", src: riseAboveMusicUrl, sourceUrl: 'https://www.scottbuckley.com.au/library/rise-above/' },
+];
 const defaultCardDurationSeconds = 3;
 const minCardDurationSeconds = 1;
 const maxCardDurationSeconds = 30;
@@ -210,6 +222,7 @@ const getTransitionRepeatEvery = (value?: number) => {
     ? Math.min(maxTransitionRepeatEvery, Math.max(1, Math.round(count)))
     : defaultTransitionRepeatEvery;
 };
+const getMusicTrack = (project: Project) => musicTracks.find(track => track.id === project.musicTrackId) || musicTracks[0];
 const getTransitionSequence = (project: Project) => {
   const count = getTransitionRepeatEvery(project.transitionRepeatEvery);
   const saved = Array.isArray(project.transitionSequence) ? project.transitionSequence : [];
@@ -303,6 +316,7 @@ function makeProject(name: string, categoryCode?: string, cards: Card[] = []): P
     domains: [label],
     transition: '淡入淡出',
     transitionRepeatEvery: defaultTransitionRepeatEvery,
+    musicTrackId: 'original',
     cardDurationSeconds: defaultCardDurationSeconds,
     cards,
     sourceDomainCode: categoryCode,
@@ -554,6 +568,10 @@ function OutroClipWithTailFrame({ clip }: { clip: ClipAsset }) {
   return frame < clip.durationInFrames ? video : <Freeze frame={clip.durationInFrames - 1}>{video}</Freeze>;
 }
 
+function MusicAttributionLabel({ attribution }: { attribution: string }) {
+  return <div style={{ position: 'absolute', left: 34, bottom: 28, maxWidth: 'calc(100% - 68px)', padding: '7px 12px', border: '1px solid rgba(255,255,255,.5)', borderRadius: 5, background: 'rgba(4,13,27,.82)', color: '#fff', fontFamily: 'Arial, sans-serif', fontSize: 18, lineHeight: 1.3, letterSpacing: 0, textShadow: '0 1px 3px rgba(0,0,0,.55)' }}>{attribution}</div>;
+}
+
 export function ExpoVideoComposition({ project, openingClip, endingClip }: { project: Project; openingClip: ClipAsset; endingClip: ClipAsset }) {
   const openingFrames = openingClip.durationInFrames;
   const cardsStart = openingFrames;
@@ -561,9 +579,11 @@ export function ExpoVideoComposition({ project, openingClip, endingClip }: { pro
   const cardsDurationInFrames = project.cards.length * cardDurationInFrames;
   const boundaryOverlapFrames = project.cards.length > 0 ? Math.min(12, cardDurationInFrames) : 0;
   const endingStart = cardsStart + cardsDurationInFrames - boundaryOverlapFrames;
-  const musicFadeFrames = Math.min(Math.round(fps * 1.2), Math.floor(cardsDurationInFrames / 4));
+  const musicDurationInFrames = Math.max(0, cardsDurationInFrames - boundaryOverlapFrames);
+  const musicFadeFrames = Math.min(Math.round(fps * 1.2), Math.floor(musicDurationInFrames / 4));
   const transitionRepeatEvery = getTransitionRepeatEvery(project.transitionRepeatEvery);
   const transitionSequence = getTransitionSequence(project);
+  const musicTrack = getMusicTrack(project);
   const titleAnimationId = getIntroTitleAnimationId(project, openingClip.id);
   return (
     <AbsoluteFill style={{ backgroundColor: '#07152d', overflow: 'hidden' }}>
@@ -584,12 +604,13 @@ export function ExpoVideoComposition({ project, openingClip, endingClip }: { pro
           <CardScene card={card} index={index} total={project.cards.length} transition={transition} durationInFrames={cardDurationInFrames + overlapAtStart} transparentBackground={isFirst || isLast} boundaryOut={isLast} />
         </Sequence>;
       })}
-      {cardsDurationInFrames > 0 && <Sequence from={cardsStart} durationInFrames={cardsDurationInFrames} name="入圍作品背景音樂">
+      {musicDurationInFrames > 0 && <Sequence from={cardsStart} durationInFrames={musicDurationInFrames} name="入圍作品背景音樂">
         <Audio
-          src={shortlistedMusicUrl}
+          src={musicTrack.src}
           loop
-          volume={frame => interpolate(frame, [0, musicFadeFrames, cardsDurationInFrames - musicFadeFrames, cardsDurationInFrames - 1], [0, 0.35, 0.35, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })}
+          volume={frame => interpolate(frame, [0, musicFadeFrames, musicDurationInFrames - musicFadeFrames, musicDurationInFrames - 1], [0, 0.35, 0.35, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })}
         />
+        {musicTrack.attribution && <MusicAttributionLabel attribution={musicTrack.attribution} />}
       </Sequence>}
       {boundaryOverlapFrames === 0 && <Sequence from={endingStart} durationInFrames={endingClip.durationInFrames} name="原始片尾">
         <Video src={endingClip.src} durationInFrames={endingClip.durationInFrames} style={{ width: '100%', height: '100%', objectFit: 'cover' }} volume={1} />
@@ -778,6 +799,7 @@ export default function App() {
   const findClip = (id: string) => clipAssets.find(clip => clip.id === id);
   const selectedOpening = project ? findClip(project.intro) : undefined;
   const selectedEnding = project ? findClip(project.outro) : undefined;
+  const selectedMusicTrack = project ? getMusicTrack(project) : musicTracks[0];
   const selectedTitleAnimation = project ? getIntroTitleAnimationId(project) : 'rise';
   const selectedTransitionSequence = project ? getTransitionSequence(project) : [];
   const recommendedTitleAnimation = project ? introTitleAnimationRecommendations[project.intro] : undefined;
@@ -799,6 +821,15 @@ export default function App() {
   const chooseTransitionForSlot = (slot: number, optionId: string) => {
     const option = transitionOptions.find(item => item.id === optionId);
     if (option) setTransitionAtSlot(slot, option, false);
+  };
+  const copyMusicAttribution = async (track: MusicTrack) => {
+    if (!track.attribution) return;
+    try {
+      await navigator.clipboard.writeText(track.attribution);
+      setNotice(`已複製 ${track.title} 署名`);
+    } catch {
+      setError('瀏覽器無法自動複製；請選取並複製畫面上的完整署名文字。');
+    }
   };
   const duration = useMemo(() => {
     if (!project || !selectedOpening || !selectedEnding) return 0;
@@ -1228,6 +1259,20 @@ export default function App() {
                 </div>
                 <p className="transition-repeat-note">循環順序：{selectedTransitionSequence.map(id => transitionOptions.find(option => option.id === id)?.value || '淡入淡出').join(' → ')} → 重複。點縮圖只預覽單一效果；作品會依此順序循環播放。</p>
               </div>
+              <section className="edit-card music-track-card" aria-labelledby="music-track-heading">
+                <div className="music-track-heading"><div><h3 id="music-track-heading">入圍作品背景音樂</h3><small>選擇一首配樂；只在入圍作品段落播放，段落前後淡入淡出，片頭與片尾原音保留</small></div><span className="music-track-badge">4 首可選</span></div>
+                <div className="music-track-grid" role="radiogroup" aria-label="選擇入圍作品背景音樂">
+                  {musicTracks.map(track => <article key={track.id} className={`music-track-option ${selectedMusicTrack.id === track.id ? 'selected' : ''}`}>
+                    <button type="button" className="music-track-select" role="radio" aria-checked={selectedMusicTrack.id === track.id} onClick={() => update(current => ({ ...current, musicTrackId: track.id }))}>
+                      <span className="music-track-title"><strong>{track.title}</strong>{track.id === 'original' ? <small>原本提供</small> : <small>CC BY 4.0</small>}</span>
+                      <span className="music-track-description">{track.description}</span>
+                    </button>
+                    <label className="music-track-listen"><span>預聽</span><audio controls preload="metadata" src={track.src} aria-label={`預聽 ${track.title}`} /></label>
+                    {track.attribution && <div className="music-track-credit"><p>{track.attribution}</p><div><button type="button" className="music-copy-credit" onClick={() => void copyMusicAttribution(track)}>複製署名</button><a href={track.sourceUrl} target="_blank" rel="noreferrer">官方曲目與授權</a></div></div>}
+                  </article>)}
+                </div>
+                <p className="music-track-note">選用 Scott Buckley 曲目時，逐字署名也會疊加在生成影片的入圍作品段落；上方「複製署名」文字可一併貼到影片說明欄。</p>
+              </section>
             </div><aside className="editor-aside"><div className="aside-sticky"><div className="aside-label">製作小提示</div><div className="tip-icon"><CircleHelp size={20} /></div><h3>讓作品有自己的順序</h3><p>影片每支只收錄目前領域的真實入圍作品。圖片沒有資料時會留白，不會用假作品代替。</p><div className="aside-divider" /><div className="aside-stat"><span>作品數</span><strong>{project.cards.length} 件</strong></div><div className="aside-stat"><span>影片規格</span><strong>Full HD · MP4</strong></div><div className="aside-note"><Cloud size={14} /> 編輯內容會自動儲存至此裝置</div></div></aside></div>
             <div className="stage-actions spread"><button className="button secondary" onClick={() => go(2)}><ArrowLeft size={16} /> 上一步</button><button className="button primary" onClick={() => go(4)}>選擇片尾 <ArrowRight size={17} /></button></div>
           </section>}
