@@ -175,6 +175,7 @@ type IntroFieldLayout = {
   textShadow?: string;
   overline?: boolean;
   replacesEmbeddedTitle?: boolean;
+  titleOffsetY?: number;
   animationFrames?: number;
 };
 
@@ -185,7 +186,7 @@ const introFieldLayouts: Record<string, IntroFieldLayout> = {
   // The source title begins emerging near 6.57 s and is complete by about 6.9 s.
   // Start one frame earlier, then match its full appearance with a 9-frame entrance.
   'intro-2': { startSeconds: 6.55, endSeconds: 10.2, left: 23, top: 31, width: 54, height: 28, background: '#07172f', color: '#f7c932', fontSize: 90, border: '1px solid rgba(242, 206, 108, 0.68)', borderRadius: 20, shadow: '0 0 28px rgba(0,0,0,0.42)', replacesEmbeddedTitle: true, animationFrames: 9 },
-  'intro-3': { startSeconds: 6.35, endSeconds: 9.3, left: 34, top: 47, width: 37, height: 21, background: '#07142c', color: '#ffd13a', fontSize: 86, border: '0 solid transparent', borderRadius: 18, shadow: 'none', textShadow: '0 0 20px rgba(255, 204, 54, 0.28), 0 2px 10px rgba(0, 0, 0, 0.45)', replacesEmbeddedTitle: true, animationFrames: 9 },
+  'intro-3': { startSeconds: 6.35, endSeconds: 9.3, left: 34, top: 52.5, width: 37, height: 16, background: '#07142c', color: '#ffd13a', fontSize: 86, border: '0 solid transparent', borderRadius: 18, shadow: 'none', textShadow: '0 0 20px rgba(255, 204, 54, 0.28), 0 2px 10px rgba(0, 0, 0, 0.45)', replacesEmbeddedTitle: true, titleOffsetY: 16, animationFrames: 9 },
   'intro-4': { startSeconds: 9.7, endSeconds: 12.55, left: 30, top: 49, width: 40, height: 13, background: '#fef1cf', color: '#073e75', fontSize: 86, border: '0 solid transparent', borderRadius: 999, shadow: 'none', textShadow: '0 2px 10px rgba(7, 62, 117, 0.18)', animationFrames: 9 },
   'intro-5': { startSeconds: 6.55, endSeconds: 10.2, left: 32, top: 75.5, width: 44, height: 15, background: '#1b1d28', color: '#fff9e8', fontSize: 64, border: '1px solid rgba(240, 215, 160, 0.62)', borderRadius: 14, shadow: '0 8px 30px rgba(0,0,0,0.4)', replacesEmbeddedTitle: true },
 };
@@ -495,13 +496,14 @@ function IntroFieldOverlay({ project, layout, durationInFrames, animationId }: {
   const animationFrames = layout.animationFrames ?? Math.min(24, Math.max(10, Math.floor(durationInFrames / 3)));
   const progress = interpolate(frame, [0, animationFrames], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const titleOpacity = animationId === 'typewriter' ? 1 : progress;
-  const titleTransform = animationId === 'rise'
+  let titleTransform = animationId === 'rise'
     ? `translateY(${(1 - progress) * 36}px)`
     : animationId === 'slide'
       ? `translateX(${(1 - progress) * 70}px)`
       : animationId === 'zoom'
         ? `scale(${0.72 + progress * 0.28})`
         : `translateY(${(1 - progress) * 5}px)`;
+  if (layout.titleOffsetY) titleTransform += ` translateY(${layout.titleOffsetY}px)`;
   const titleClipPath = animationId === 'wipe' ? `inset(0 ${(1 - progress) * 100}% 0 0)` : undefined;
   const animatedLetterSpacing = animationId === 'tracking'
     ? interpolate(frame, [0, animationFrames], [Math.max(18, letterSpacing + 12), letterSpacing], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
