@@ -50,6 +50,7 @@ type Project = {
   domains: string[];
   titleAnimations?: Record<string, string>;
   transition: string;
+  transitionSequence?: string[];
   transitionRepeatEvery: number;
   cardDurationSeconds: number;
   cards: Card[];
@@ -120,6 +121,7 @@ const transitionOptions = [
   { id: 'vertical', value: '垂直滑入', description: '由下往上帶入' },
   { id: 'flip', value: '立體翻轉', description: '以 3D 翻面轉場' },
 ] as const;
+const getTransitionId = (value?: string) => transitionOptions.find(option => option.value === value)?.id || 'fade';
 const introTitleAnimationOptions = [
   { id: 'rise', name: '淡入上浮', description: '輕柔浮現', symbol: '↑' },
   { id: 'tracking', name: '字距收束', description: '科技感聚合', symbol: '↔' },
@@ -207,6 +209,15 @@ const getTransitionRepeatEvery = (value?: number) => {
   return Number.isFinite(count) && count > 0
     ? Math.min(maxTransitionRepeatEvery, Math.max(1, Math.round(count)))
     : defaultTransitionRepeatEvery;
+};
+const getTransitionSequence = (project: Project) => {
+  const count = getTransitionRepeatEvery(project.transitionRepeatEvery);
+  const saved = Array.isArray(project.transitionSequence) ? project.transitionSequence : [];
+  const fallbackId = getTransitionId(project.transition);
+  return Array.from({ length: count }, (_, index) => {
+    const savedId = saved[index];
+    return transitionOptions.some(option => option.id === savedId) ? savedId : index === 0 ? fallbackId : 'direct';
+  });
 };
 const getIntroTitleAnimationId = (project: Project, introId = project.intro): IntroTitleAnimationId => {
   const saved = project.titleAnimations?.[introId];
@@ -552,7 +563,7 @@ export function ExpoVideoComposition({ project, openingClip, endingClip }: { pro
   const endingStart = cardsStart + cardsDurationInFrames - boundaryOverlapFrames;
   const musicFadeFrames = Math.min(Math.round(fps * 1.2), Math.floor(cardsDurationInFrames / 4));
   const transitionRepeatEvery = getTransitionRepeatEvery(project.transitionRepeatEvery);
-  const boundaryTransition = project.transition === '直接切換' ? '淡入淡出' : project.transition;
+  const transitionSequence = getTransitionSequence(project);
   const titleAnimationId = getIntroTitleAnimationId(project, openingClip.id);
   return (
     <AbsoluteFill style={{ backgroundColor: '#07152d', overflow: 'hidden' }}>
@@ -566,9 +577,9 @@ export function ExpoVideoComposition({ project, openingClip, endingClip }: { pro
         const isFirst = index === 0;
         const isLast = index === project.cards.length - 1;
         const overlapAtStart = isFirst ? boundaryOverlapFrames : 0;
-        const transition = isFirst || isLast
-          ? boundaryTransition
-          : index % transitionRepeatEvery === 0 ? project.transition : '直接切換';
+        const transitionId = transitionSequence[index % transitionRepeatEvery];
+        const selectedTransition = transitionOptions.find(option => option.id === transitionId)?.value || '淡入淡出';
+        const transition = (isFirst || isLast) && selectedTransition === '直接切換' ? '淡入淡出' : selectedTransition;
         return <Sequence key={card.id} from={cardsStart + index * cardDurationInFrames - overlapAtStart} durationInFrames={cardDurationInFrames + overlapAtStart} name={`作品 ${index + 1}`}>
           <CardScene card={card} index={index} total={project.cards.length} transition={transition} durationInFrames={cardDurationInFrames + overlapAtStart} transparentBackground={isFirst || isLast} boundaryOut={isLast} />
         </Sequence>;
@@ -666,6 +677,7 @@ export default function App() {
   const [previewTemplateId, setPreviewTemplateId] = useState('');
   const [titleAnimationDemo, setTitleAnimationDemo] = useState<{ introId: string; animationId: IntroTitleAnimationId; run: number } | null>(null);
   const [transitionDemo, setTransitionDemo] = useState<{ id: string; run: number } | null>(null);
+  const [activeTransitionSlot, setActiveTransitionSlot] = useState(0);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [busyProgress, setBusyProgress] = useState({ completed: 0, total: 0 });
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -767,14 +779,26 @@ export default function App() {
   const selectedOpening = project ? findClip(project.intro) : undefined;
   const selectedEnding = project ? findClip(project.outro) : undefined;
   const selectedTitleAnimation = project ? getIntroTitleAnimationId(project) : 'rise';
+  const selectedTransitionSequence = project ? getTransitionSequence(project) : [];
   const recommendedTitleAnimation = project ? introTitleAnimationRecommendations[project.intro] : undefined;
   const chooseTitleAnimation = (animationId: IntroTitleAnimationId) => {
     update(current => ({ ...current, titleAnimations: { ...current.titleAnimations, [current.intro]: animationId } }));
     if (project) setTitleAnimationDemo(current => ({ introId: project.intro, animationId, run: (current?.run ?? 0) + 1 }));
   };
-  const chooseTransition = (option: typeof transitionOptions[number]) => {
-    update(current => ({ ...current, transition: option.value }));
-    setTransitionDemo(current => ({ id: option.id, run: (current?.run ?? 0) + 1 }));
+  const setTransitionAtSlot = (slot: number, option: typeof transitionOptions[number], preview: boolean) => {
+    const targetSlot = Math.max(0, Math.min(slot, selectedTransitionSequence.length - 1));
+    update(current => {
+      const sequence = getTransitionSequence(current);
+      sequence[Math.min(targetSlot, sequence.length - 1)] = option.id;
+      return { ...current, transition: option.value, transitionSequence: sequence };
+    });
+    setActiveTransitionSlot(targetSlot);
+    if (preview) setTransitionDemo(current => ({ id: option.id, run: (current?.run ?? 0) + 1 }));
+  };
+  const chooseTransition = (option: typeof transitionOptions[number]) => setTransitionAtSlot(activeTransitionSlot, option, true);
+  const chooseTransitionForSlot = (slot: number, optionId: string) => {
+    const option = transitionOptions.find(item => item.id === optionId);
+    if (option) setTransitionAtSlot(slot, option, false);
   };
   const duration = useMemo(() => {
     if (!project || !selectedOpening || !selectedEnding) return 0;
@@ -1175,13 +1199,34 @@ export default function App() {
               </div>
               <div className="edit-card transition-card">
                 <div className="transition-settings-heading">
-                  <div><h3>轉場動畫</h3><small>點擊縮圖預覽單一效果；可設定每幾件作品重複一次</small></div>
-                  <label className="repeat-control"><span>每</span><input className="text-input repeat-input" type="number" min={1} max={maxTransitionRepeatEvery} step={1} aria-label="轉場動畫每幾件作品循環一次" value={getTransitionRepeatEvery(project.transitionRepeatEvery)} onChange={event => update(current => ({ ...current, transitionRepeatEvery: getTransitionRepeatEvery(Number(event.target.value)) }))} /><span>件重複一次</span></label>
+                  <div><h3>轉場動畫</h3><small>每個循環位置可直接指定效果；點縮圖則只預覽並套用該效果</small></div>
+                  <label className="repeat-control"><span>每</span><input className="text-input repeat-input" type="number" min={1} max={maxTransitionRepeatEvery} step={1} aria-label="轉場動畫每幾件作品循環一次" value={getTransitionRepeatEvery(project.transitionRepeatEvery)} onChange={event => { const count = getTransitionRepeatEvery(Number(event.target.value)); update(current => ({ ...current, transitionRepeatEvery: count })); setActiveTransitionSlot(slot => Math.min(slot, count - 1)); }} /><span>件重複一次</span></label>
                 </div>
-                <div className="transition-options" role="radiogroup" aria-label="選擇轉場動畫">
-                  {transitionOptions.map(option => <button key={option.value} type="button" className={`transition-option ${project.transition === option.value ? 'selected' : ''}`} role="radio" aria-checked={project.transition === option.value} onClick={() => chooseTransition(option)}><TransitionThumbnail option={option} active={transitionDemo?.id === option.id} run={transitionDemo?.id === option.id ? transitionDemo.run : 0} /></button>)}
+                <div className="transition-cycle" aria-label="轉場循環順序">
+                  {selectedTransitionSequence.map((effectId, index) => {
+                    const effect = transitionOptions.find(option => option.id === effectId) || transitionOptions[0];
+                    const repeatEvery = getTransitionRepeatEvery(project.transitionRepeatEvery);
+                    const workExamples = Array.from({ length: 3 }, (_, cycle) => index + 1 + cycle * repeatEvery).join('、');
+                    return <div key={index} className="transition-cycle-position">
+                      <button type="button" className={`transition-cycle-slot ${activeTransitionSlot === index ? 'active' : ''}`} aria-pressed={activeTransitionSlot === index} aria-label={`選擇循環位置 ${index + 1}，目前 ${effect.value}，套用於作品 ${workExamples}`} onClick={() => setActiveTransitionSlot(index)}>
+                        <span>循環位置 {index + 1}</span><strong>{effect.value}</strong><small>作品 {workExamples}…</small>
+                      </button>
+                      <label className="transition-cycle-select-label"><span>指定效果</span><select className="text-input transition-cycle-select" aria-label={`指定循環位置 ${index + 1} 的轉場效果`} value={effect.id} onFocus={() => setActiveTransitionSlot(index)} onChange={event => chooseTransitionForSlot(index, event.target.value)}>
+                        {transitionOptions.map(option => <option key={option.id} value={option.id}>{option.value}</option>)}
+                      </select></label>
+                    </div>;
+                  })}
                 </div>
-                {getTransitionRepeatEvery(project.transitionRepeatEvery) > 1 && <p className="transition-repeat-note">效果從第 1 件作品開始，每 {getTransitionRepeatEvery(project.transitionRepeatEvery)} 件播放一次；其餘作品直接切換。</p>}
+                <div className="transition-options" role="group" aria-label={`預覽並選擇循環位置 ${activeTransitionSlot + 1} 的轉場效果`}>
+                  {transitionOptions.map(option => {
+                    const selectedCount = selectedTransitionSequence.filter(id => id === option.id).length;
+                    return <button key={option.value} type="button" className={`transition-option ${selectedTransitionSequence[activeTransitionSlot] === option.id ? 'selected' : ''}`} aria-pressed={selectedTransitionSequence[activeTransitionSlot] === option.id} aria-label={`將${option.value}設為循環第 ${activeTransitionSlot + 1} 個轉場並預覽單一效果`} onClick={() => chooseTransition(option)}>
+                      <TransitionThumbnail option={option} active={transitionDemo?.id === option.id} run={transitionDemo?.id === option.id ? transitionDemo.run : 0} />
+                      {selectedCount > 0 && <span className="transition-selected-tag">循環 {selectedCount} 次</span>}
+                    </button>;
+                  })}
+                </div>
+                <p className="transition-repeat-note">循環順序：{selectedTransitionSequence.map(id => transitionOptions.find(option => option.id === id)?.value || '淡入淡出').join(' → ')} → 重複。點縮圖只預覽單一效果；作品會依此順序循環播放。</p>
               </div>
             </div><aside className="editor-aside"><div className="aside-sticky"><div className="aside-label">製作小提示</div><div className="tip-icon"><CircleHelp size={20} /></div><h3>讓作品有自己的順序</h3><p>影片每支只收錄目前領域的真實入圍作品。圖片沒有資料時會留白，不會用假作品代替。</p><div className="aside-divider" /><div className="aside-stat"><span>作品數</span><strong>{project.cards.length} 件</strong></div><div className="aside-stat"><span>影片規格</span><strong>Full HD · MP4</strong></div><div className="aside-note"><Cloud size={14} /> 編輯內容會自動儲存至此裝置</div></div></aside></div>
             <div className="stage-actions spread"><button className="button secondary" onClick={() => go(2)}><ArrowLeft size={16} /> 上一步</button><button className="button primary" onClick={() => go(4)}>選擇片尾 <ArrowRight size={17} /></button></div>
