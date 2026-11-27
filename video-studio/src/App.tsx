@@ -156,7 +156,15 @@ const introTemplates = [1, 2, 3, 4, 5].map(number => ({
   number,
   kind: 'intro' as const,
   title: `片頭方案${['一', '二', '三', '四', '五'][number - 1]}`,
-}));
+})).concat([
+  { id: 'intro-6', number: 6, kind: 'intro' as const, title: '企業智慧化' },
+  { id: 'intro-7', number: 7, kind: 'intro' as const, title: '進修部' },
+  { id: 'intro-8', number: 8, kind: 'intro' as const, title: '網路應用與資通安全' },
+  { id: 'intro-9', number: 9, kind: 'intro' as const, title: '智慧流通應用與研究' },
+  { id: 'intro-10', number: 10, kind: 'intro' as const, title: '智慧運算創新應用（版本一）' },
+  { id: 'intro-11', number: 11, kind: 'intro' as const, title: '嵌入式系統與行動計算' },
+  { id: 'intro-12', number: 12, kind: 'intro' as const, title: '智慧運算創新應用（版本二）' },
+]);
 const outroTemplates = [1, 2, 3, 4].map(number => ({
   id: `outro-${number}`,
   number,
@@ -193,7 +201,7 @@ type IntroFieldLayout = {
   animationFrames?: number;
 };
 
-// Positions and time windows are matched to the five supplied intro clips.
+// Positions and time windows apply only to the original five intro clips; the seven added clips keep their own visuals.
 // Clips 2–5 have a baked-in "企業智慧化" title; their masks replace that line.
 const introFieldLayouts: Record<string, IntroFieldLayout> = {
   'intro-1': { startSeconds: 0.7, endSeconds: 2.4, left: 21, top: 85.5, width: 58, height: 12.5, background: 'rgba(4, 13, 27, 0.72)', color: '#fff8e8', fontSize: 72, border: '1px solid rgba(214, 182, 110, 0.82)', borderRadius: 30, shadow: '0 8px 32px rgba(0,0,0,0.48)' },
@@ -922,7 +930,7 @@ export default function App() {
       }
       const introCount = clipAssets.filter(clip => clip.kind === 'intro').length;
       const outroCount = clipAssets.filter(clip => clip.kind === 'outro').length;
-      setNotice(`新增或更新 ${completed} 支模板；目前片頭 ${Math.min(5, introCount + files.filter(file => parseTemplateFile(file)?.kind === 'intro').length)}/5、片尾 ${Math.min(4, outroCount + files.filter(file => parseTemplateFile(file)?.kind === 'outro').length)}/4。`);
+      setNotice(`新增或更新 ${completed} 支模板；目前片頭 ${Math.min(12, introCount + files.filter(file => parseTemplateFile(file)?.kind === 'intro').length)}/12、片尾 ${Math.min(4, outroCount + files.filter(file => parseTemplateFile(file)?.kind === 'outro').length)}/4。`);
       if (rejected.length) setError(`以下檔案未匯入：${rejected.join('、')}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '更新模板影片失敗。');
@@ -1086,7 +1094,7 @@ export default function App() {
   const templateList = (kind: 'intro' | 'outro') => kind === 'intro' ? introTemplates : outroTemplates;
   const chosenTemplate = project ? findClip(project.stage === 2 ? project.intro : project.outro) : undefined;
 
-  if (loading) return <div className="loading"><div className="brand-mark"><Film /></div>正在準備創作空間與九支模板影片…</div>;
+  if (loading) return <div className="loading"><div className="brand-mark"><Film /></div>正在準備創作空間與十六支模板影片…</div>;
 
   return (
     <div className="app-shell min-h-screen antialiased">
@@ -1142,12 +1150,12 @@ export default function App() {
 
         <section className="clip-library">
           <div className="clip-library-top">
-            <div className="clip-library-copy"><div className="eyebrow muted">SOURCE VIDEO TEMPLATES</div><h2>片頭／片尾原始影片</h2><p>九支原始影片都可預覽；建立專案後，能在片頭與片尾步驟選用。影片保留原音訊。</p></div>
-            <div className="clip-library-meta"><span className={`clip-count ${introCount === 5 && outroCount === 4 ? 'complete' : ''}`}>{introCount + outroCount} / 9 支已就緒</span><button className="button secondary" disabled={busyAction !== null} aria-busy={busyAction === 'template-upload'} onClick={() => clipUploadRef.current?.click()}>{busyAction === 'template-upload' ? <><span className="spinner dark" />更新中 {busyProgress.completed}/{busyProgress.total}</> : <><Upload size={15} /> 更新／補上 MP4</>}</button><input ref={clipUploadRef} type="file" accept="video/mp4,.mp4" multiple hidden onChange={event => { void uploadTemplates(event.target.files ? Array.from(event.target.files) : null); event.currentTarget.value = ''; }} /></div>
+            <div className="clip-library-copy"><div className="eyebrow muted">SOURCE VIDEO TEMPLATES</div><h2>片頭／片尾原始影片</h2><p>十二支片頭與四支片尾都可預覽、選用，並保留提供影片的原始音訊。</p></div>
+            <div className="clip-library-meta"><span className={`clip-count ${introCount === 12 && outroCount === 4 ? 'complete' : ''}`}>{introCount + outroCount} / 16 支已就緒</span><button className="button secondary" disabled={busyAction !== null} aria-busy={busyAction === 'template-upload'} onClick={() => clipUploadRef.current?.click()}>{busyAction === 'template-upload' ? <><span className="spinner dark" />更新中 {busyProgress.completed}/{busyProgress.total}</> : <><Upload size={15} /> 更新／補上 MP4</>}</button><input ref={clipUploadRef} type="file" accept="video/mp4,.mp4" multiple hidden onChange={event => { void uploadTemplates(event.target.files ? Array.from(event.target.files) : null); event.currentTarget.value = ''; }} /></div>
           </div>
           <div className="clip-library-groups">
             {(['intro', 'outro'] as const).map(kind => <section className={`clip-group ${kind}`} key={kind} aria-label={kind === 'intro' ? '片頭影片模板' : '片尾影片模板'}>
-              <div className="clip-group-heading"><div><strong>{kind === 'intro' ? '片頭動畫' : '片尾動畫'}</strong><small>{kind === 'intro' ? '開場主視覺' : '作品結尾收束'}</small></div><span>{kind === 'intro' ? introCount : outroCount} / {kind === 'intro' ? 5 : 4}</span></div>
+              <div className="clip-group-heading"><div><strong>{kind === 'intro' ? '片頭動畫' : '片尾動畫'}</strong><small>{kind === 'intro' ? '開場主視覺' : '作品結尾收束'}</small></div><span>{kind === 'intro' ? introCount : outroCount} / {kind === 'intro' ? 12 : 4}</span></div>
               <div className="clip-card-grid">{templateList(kind).map(item => {
                 const clip = findClip(item.id);
                 return <button type="button" className={`home-clip-card ${previewTemplateId === item.id ? 'selected' : ''}`} key={item.id} disabled={!clip} aria-pressed={previewTemplateId === item.id} onClick={() => setPreviewTemplateId(item.id)}>
@@ -1186,7 +1194,7 @@ export default function App() {
             <div className="stage-actions"><button className="button primary" onClick={() => go(2)}>選擇片頭 <ArrowRight size={17} /></button></div>
           </section>}
 
-          {stage === 2 && <section className="stage-panel"><div className="panel-kicker">STEP 02 · ORIGINAL OPENING CLIPS</div><h1>選擇原始片頭影片</h1><p className="lead">縮圖擷取自原始 MP4；點選方案可播放完整影片。預覽與最終匯出會套用目前領域名稱。</p>
+          {stage === 2 && <section className="stage-panel"><div className="panel-kicker">STEP 02 · ORIGINAL OPENING CLIPS</div><h1>選擇原始片頭影片</h1><p className="lead">縮圖擷取自原始 MP4；點選方案可播放完整影片。{introFieldLayouts[project.intro] ? '此片頭的預覽與最終匯出會套用目前領域名稱。' : '這七支新增片頭會保留原始畫面，不額外疊加領域文字。'}</p>
             <div className="template-grid intro-grid">{templateList('intro').map(item => {
               const clip = findClip(item.id);
               return <button className={`template-card ${project.intro === item.id ? 'selected' : ''}`} key={item.id} disabled={!clip} aria-pressed={project.intro === item.id} onClick={() => { update(current => ({ ...current, intro: item.id })); setPreviewTemplateId(item.id); }}>
@@ -1210,7 +1218,7 @@ export default function App() {
                 <button className="icon-button remove-group" title="移除此作品" onClick={() => update(current => ({ ...current, cards: current.cards.filter(item => item.id !== card.id) }))}><Trash2 size={16} /></button>
               </article>)}</div>
               <button className="add-group" onClick={() => update(current => ({ ...current, cards: [...current.cards, blankCard(current.domains[0] || domains[0][1])] }))}><Plus size={17} /> 新增一件作品 <span>{project.cards.length} 件</span></button>
-              <div className="edit-card title-animation-card">
+              {introFieldLayouts[project.intro] ? <div className="edit-card title-animation-card">
                 <div className="title-animation-heading">
                   <div><h3>片頭領域名稱進場動畫</h3><small>依目前片頭提供推薦；每支片頭各自記住選擇</small></div>
                   {recommendedTitleAnimation && <span className="title-animation-recommendation"><Sparkles size={13} /> 片頭方案 {project.intro.replace('intro-', '')} 建議：{introTitleAnimationOptions.find(option => option.id === recommendedTitleAnimation.animationId)?.name}</span>}
@@ -1223,7 +1231,7 @@ export default function App() {
                   </button>)}
                 </div>
                 <p className="title-animation-note">點擊某個縮圖會只播放該範例；其他縮圖不會自動播放，也不會開啟額外播放器。每支片頭的選擇分別保存。</p>
-              </div>
+              </div> : <div className="edit-card title-animation-card"><div className="title-animation-heading"><div><h3>保留原始片頭畫面</h3><small>不額外疊加領域文字；片頭音訊維持原樣。</small></div></div></div>}
               <div className="edit-card card-duration-card">
                 <div><h3>入圍作品顯示時間</h3><small>設定每件作品卡片停留秒數，並同步調整預覽與匯出影片長度</small></div>
                 <label className="duration-control"><span>每件作品</span><input className="text-input duration-input" type="number" min={minCardDurationSeconds} max={maxCardDurationSeconds} step={0.5} aria-label="每件入圍作品顯示秒數" value={getCardDurationSeconds(project.cardDurationSeconds)} onChange={event => update(current => ({ ...current, cardDurationSeconds: Math.min(maxCardDurationSeconds, Math.max(minCardDurationSeconds, Number(event.target.value) || minCardDurationSeconds)) }))} /><span>秒</span></label>
@@ -1290,7 +1298,7 @@ export default function App() {
             <div className="stage-actions spread"><button className="button secondary" onClick={() => go(3)}><ArrowLeft size={16} /> 上一步</button><button className="button primary" disabled={!selectedEnding} onClick={() => go(5)}>預覽影片 <ArrowRight size={17} /></button></div>
           </section>}
 
-          {stage === 5 && <section className="stage-panel preview-stage"><div className="panel-kicker">STEP 05 · PREVIEW & EXPORT</div><div className="edit-heading"><div><h1>預覽與匯出</h1><p className="lead">領域名稱會依片頭畫面直接疊入；原有固定領域字樣會被替換，不再接重複標題卡。</p></div><span className="quality-pill">FULL HD · 1080P</span></div>
+          {stage === 5 && <section className="stage-panel preview-stage"><div className="panel-kicker">STEP 05 · PREVIEW & EXPORT</div><div className="edit-heading"><div><h1>預覽與匯出</h1><p className="lead">{introFieldLayouts[project.intro] ? '領域名稱會依片頭畫面直接疊入；原有固定領域字樣會被替換，不再接重複標題卡。' : '此片頭保留提供的原始畫面與音訊，不額外疊加領域文字。'}</p></div><span className="quality-pill">FULL HD · 1080P</span></div>
             {selectedOpening && selectedEnding && duration > 0 ? <div className="player-wrap"><Player component={ExpoVideoComposition} inputProps={{ project, openingClip: selectedOpening, endingClip: selectedEnding }} durationInFrames={duration} compositionWidth={W} compositionHeight={H} fps={fps} controls loop style={{ width: '100%', aspectRatio: '16/9' }} /></div> : <div className="empty-state"><h3>模板素材尚未就緒</h3><p>請先選擇可用的片頭與片尾影片。</p></div>}
             <div className="preview-meta"><span><Film size={15} />{project.cards.length} 件作品 · {getCardDurationSeconds(project.cardDurationSeconds)} 秒／件</span><span>{Math.floor(duration / fps / 60)}:{String(Math.floor(duration / fps) % 60).padStart(2, '0')} 分鐘總長</span><span>轉場每 {getTransitionRepeatEvery(project.transitionRepeatEvery)} 件循環</span><span>1920 × 1080 · 30 FPS · H.264 / AAC</span></div>
             <div className="browser-note"><CircleHelp size={16} /><div><strong>瀏覽器端算繪</strong><span>MP4 會在你的裝置上產生；背景音樂只在入圍作品卡片段落播放，開頭與結尾各淡化最長 1.2 秒，片頭／片尾保留原音訊。請保持此分頁開啟，時間視電腦效能而定。</span></div></div>
