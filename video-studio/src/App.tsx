@@ -10,6 +10,7 @@ import shortlistedMusicUrl from '../assets/shortlisted-background.m4a?url';
 import ascensionMusicUrl from '../assets/scott-buckley-ascension.mp3?url';
 import victorLuxMusicUrl from '../assets/scott-buckley-victor-lux.mp3?url';
 import riseAboveMusicUrl from '../assets/scott-buckley-rise-above.mp3?url';
+import { DEFAULT_INTRO_ID, getDefaultIntroId } from './domain-intro-mapping.js';
 import {
   ArrowLeft,
   ArrowRight,
@@ -59,6 +60,7 @@ type Project = {
   cardDurationSeconds: number;
   cards: Card[];
   sourceDomainCode?: string;
+  introSelectionMode?: 'automatic' | 'manual';
 };
 
 type StoredClip = { id: string; name: string; blob: Blob };
@@ -101,6 +103,7 @@ const POSTER_KEY = 'app';
 const fps = 30;
 const W = 1920;
 const H = 1080;
+const NO_OUTRO_ID = 'no-outro';
 type MusicTrackId = 'original' | 'ascension' | 'victor-lux' | 'rise-above';
 type MusicTrack = { id: MusicTrackId; title: string; description: string; attribution?: string; src: string; sourceUrl?: string };
 const musicTracks: MusicTrack[] = [
@@ -316,7 +319,8 @@ function makeProject(name: string, categoryCode?: string, cards: Card[] = []): P
     name,
     updatedAt: Date.now(),
     stage: 1,
-    intro: 'intro-1',
+    intro: categoryCode ? getDefaultIntroId(categoryCode) : DEFAULT_INTRO_ID,
+    introSelectionMode: categoryCode ? 'automatic' : 'manual',
     outro: 'outro-1',
     title: categoryCode ? `${categoryCode}｜${label}` : '2026 專題成果展',
     subtitle: '入圍專題作品',
@@ -580,12 +584,13 @@ function MusicAttributionLabel({ attribution }: { attribution: string }) {
   return <div style={{ position: 'absolute', left: 34, bottom: 28, maxWidth: 'calc(100% - 68px)', padding: '7px 12px', border: '1px solid rgba(255,255,255,.5)', borderRadius: 5, background: 'rgba(4,13,27,.82)', color: '#fff', fontFamily: 'Arial, sans-serif', fontSize: 18, lineHeight: 1.3, letterSpacing: 0, textShadow: '0 1px 3px rgba(0,0,0,.55)' }}>{attribution}</div>;
 }
 
-export function ExpoVideoComposition({ project, openingClip, endingClip }: { project: Project; openingClip: ClipAsset; endingClip: ClipAsset }) {
+export function ExpoVideoComposition({ project, openingClip, endingClip }: { project: Project; openingClip: ClipAsset; endingClip?: ClipAsset }) {
   const openingFrames = openingClip.durationInFrames;
   const cardsStart = openingFrames;
   const cardDurationInFrames = getCardDurationInFrames(project.cardDurationSeconds);
   const cardsDurationInFrames = project.cards.length * cardDurationInFrames;
-  const boundaryOverlapFrames = project.cards.length > 0 ? Math.min(12, cardDurationInFrames) : 0;
+  const hasEnding = project.outro !== NO_OUTRO_ID && Boolean(endingClip);
+  const boundaryOverlapFrames = hasEnding && project.cards.length > 0 ? Math.min(12, cardDurationInFrames) : 0;
   const endingStart = cardsStart + cardsDurationInFrames - boundaryOverlapFrames;
   const musicDurationInFrames = Math.max(0, cardsDurationInFrames - boundaryOverlapFrames);
   const musicFadeFrames = Math.min(Math.round(fps * 1.2), Math.floor(musicDurationInFrames / 4));
@@ -598,7 +603,7 @@ export function ExpoVideoComposition({ project, openingClip, endingClip }: { pro
       <Sequence from={0} durationInFrames={openingFrames} name="原始片頭">
         <IntroTitlePreviewComposition project={project} openingClip={openingClip} animationId={titleAnimationId} />
       </Sequence>
-      {boundaryOverlapFrames > 0 && <Sequence from={endingStart} durationInFrames={endingClip.durationInFrames + boundaryOverlapFrames} name="片尾轉場與原始片尾">
+      {hasEnding && endingClip && boundaryOverlapFrames > 0 && <Sequence from={endingStart} durationInFrames={endingClip.durationInFrames + boundaryOverlapFrames} name="片尾轉場與原始片尾">
         <OutroClipWithTailFrame clip={endingClip} />
       </Sequence>}
       {project.cards.map((card, index) => {
@@ -609,7 +614,7 @@ export function ExpoVideoComposition({ project, openingClip, endingClip }: { pro
         const selectedTransition = transitionOptions.find(option => option.id === transitionId)?.value || '淡入淡出';
         const transition = (isFirst || isLast) && selectedTransition === '直接切換' ? '淡入淡出' : selectedTransition;
         return <Sequence key={card.id} from={cardsStart + index * cardDurationInFrames - overlapAtStart} durationInFrames={cardDurationInFrames + overlapAtStart} name={`作品 ${index + 1}`}>
-          <CardScene card={card} index={index} total={project.cards.length} transition={transition} durationInFrames={cardDurationInFrames + overlapAtStart} transparentBackground={isFirst || isLast} boundaryOut={isLast} />
+          <CardScene card={card} index={index} total={project.cards.length} transition={transition} durationInFrames={cardDurationInFrames + overlapAtStart} transparentBackground={isFirst || (isLast && hasEnding)} boundaryOut={isLast && hasEnding} />
         </Sequence>;
       })}
       {musicDurationInFrames > 0 && <Sequence from={cardsStart} durationInFrames={musicDurationInFrames} name="入圍作品背景音樂">
@@ -620,7 +625,7 @@ export function ExpoVideoComposition({ project, openingClip, endingClip }: { pro
         />
         {musicTrack.attribution && <MusicAttributionLabel attribution={musicTrack.attribution} />}
       </Sequence>}
-      {boundaryOverlapFrames === 0 && <Sequence from={endingStart} durationInFrames={endingClip.durationInFrames} name="原始片尾">
+      {hasEnding && endingClip && boundaryOverlapFrames === 0 && <Sequence from={endingStart} durationInFrames={endingClip.durationInFrames} name="原始片尾">
         <Video src={endingClip.src} durationInFrames={endingClip.durationInFrames} style={{ width: '100%', height: '100%', objectFit: 'cover' }} volume={1} />
       </Sequence>}
     </AbsoluteFill>
@@ -742,6 +747,16 @@ export default function App() {
     const initialize = async () => {
       try {
         const [savedProjects, storedClips, manifest] = await Promise.all([allProjects(), allStoredClips(), publicManifest()]);
+        const normalizedProjects = savedProjects.map(item => {
+          if (!item.sourceDomainCode) return item;
+          const mode = item.introSelectionMode || (item.intro === DEFAULT_INTRO_ID ? 'automatic' : 'manual');
+          if (mode === 'manual') return item.introSelectionMode === 'manual' ? item : { ...item, introSelectionMode: 'manual' as const };
+          const intro = getDefaultIntroId(item.sourceDomainCode);
+          return item.intro === intro && item.introSelectionMode === 'automatic'
+            ? item
+            : { ...item, intro, introSelectionMode: 'automatic' as const };
+        });
+        await Promise.all(normalizedProjects.filter((item, index) => item !== savedProjects[index]).map(putProject));
         const storedById = new Map(storedClips.map(clip => [clip.id, clip]));
         const manifestById = new Map([...(manifest?.intros || []), ...(manifest?.outros || [])].map(item => [item.id, item]));
         const loaded: ClipAsset[] = [];
@@ -766,7 +781,7 @@ export default function App() {
           }
         }
         if (!cancelled) {
-          setProjects(savedProjects.sort((a, b) => b.updatedAt - a.updatedAt));
+          setProjects(normalizedProjects.sort((a, b) => b.updatedAt - a.updatedAt));
           setClipAssets(loaded);
           for (const asset of loaded.filter(item => item.stored)) clipUrlsRef.current.set(asset.id, asset.src);
         } else urls.forEach(url => URL.revokeObjectURL(url));
@@ -806,7 +821,8 @@ export default function App() {
   };
   const findClip = (id: string) => clipAssets.find(clip => clip.id === id);
   const selectedOpening = project ? findClip(project.intro) : undefined;
-  const selectedEnding = project ? findClip(project.outro) : undefined;
+  const selectedEnding = project && project.outro !== NO_OUTRO_ID ? findClip(project.outro) : undefined;
+  const canPreview = Boolean(selectedOpening && (project?.outro === NO_OUTRO_ID || selectedEnding));
   const selectedMusicTrack = project ? getMusicTrack(project) : musicTracks[0];
   const selectedTitleAnimation = project ? getIntroTitleAnimationId(project) : 'rise';
   const selectedTransitionSequence = project ? getTransitionSequence(project) : [];
@@ -840,8 +856,8 @@ export default function App() {
     }
   };
   const duration = useMemo(() => {
-    if (!project || !selectedOpening || !selectedEnding) return 0;
-    return selectedOpening.durationInFrames + project.cards.length * getCardDurationInFrames(project.cardDurationSeconds) + selectedEnding.durationInFrames;
+    if (!project || !selectedOpening || (project.outro !== NO_OUTRO_ID && !selectedEnding)) return 0;
+    return selectedOpening.durationInFrames + project.cards.length * getCardDurationInFrames(project.cardDurationSeconds) + (selectedEnding?.durationInFrames || 0);
   }, [project, selectedOpening, selectedEnding]);
 
   const create = () => {
@@ -994,7 +1010,7 @@ export default function App() {
       });
       const projectName = `${code}｜${domainName(code)}`;
       const next: Project = previous
-        ? { ...previous, name: projectName, updatedAt: Date.now(), domains: [domainName(code)], cards }
+        ? { ...previous, name: projectName, updatedAt: Date.now(), domains: [domainName(code)], cards, introSelectionMode, ...(introSelectionMode === 'automatic' ? { intro: getDefaultIntroId(code) } : {}) }
         : makeProject(projectName, code, cards);
       await putProject(next);
       if (previous) updated++;
@@ -1041,8 +1057,8 @@ export default function App() {
   };
 
   const exportVideo = async () => {
-    if (!project || !selectedOpening || !selectedEnding) {
-      setError('請先選好一支片頭與一支片尾模板。');
+    if (!project || !selectedOpening || (project.outro !== NO_OUTRO_ID && !selectedEnding)) {
+      setError('請先選好一支片頭與片尾選項。');
       return;
     }
     setError('');
@@ -1194,10 +1210,10 @@ export default function App() {
             <div className="stage-actions"><button className="button primary" onClick={() => go(2)}>選擇片頭 <ArrowRight size={17} /></button></div>
           </section>}
 
-          {stage === 2 && <section className="stage-panel"><div className="panel-kicker">STEP 02 · ORIGINAL OPENING CLIPS</div><h1>選擇原始片頭影片</h1><p className="lead">縮圖擷取自原始 MP4；點選方案可播放完整影片。{introFieldLayouts[project.intro] ? '此片頭的預覽與最終匯出會套用目前領域名稱。' : '這七支新增片頭會保留原始畫面，不額外疊加領域文字。'}</p>
+          {stage === 2 && <section className="stage-panel"><div className="panel-kicker">STEP 02 · ORIGINAL OPENING CLIPS</div><h1>選擇原始片頭影片</h1><p className="lead">{project.sourceDomainCode && project.introSelectionMode !== 'manual' ? `依 ${project.sourceDomainCode} 領域代碼自動配對「${introTemplates.find(item => item.id === project.intro)?.title || domainName(project.sourceDomainCode)}」；仍可手動改選。` : '縮圖擷取自原始 MP4；點選方案可播放完整影片。'}{introFieldLayouts[project.intro] ? '此片頭的預覽與最終匯出會套用目前領域名稱。' : '這七支新增片頭會保留原始畫面，不額外疊加領域文字。'}</p>
             <div className="template-grid intro-grid">{templateList('intro').map(item => {
               const clip = findClip(item.id);
-              return <button className={`template-card ${project.intro === item.id ? 'selected' : ''}`} key={item.id} disabled={!clip} aria-pressed={project.intro === item.id} onClick={() => { update(current => ({ ...current, intro: item.id })); setPreviewTemplateId(item.id); }}>
+              return <button className={`template-card ${project.intro === item.id ? 'selected' : ''}`} key={item.id} disabled={!clip} aria-pressed={project.intro === item.id} onClick={() => { update(current => ({ ...current, intro: item.id, introSelectionMode: 'manual' })); setPreviewTemplateId(item.id); }}>
                 <TemplateThumbnail clip={clip} />
                 <span className="template-caption"><strong>{item.title}</strong><small>{clip ? `${clip.durationSeconds.toFixed(2)} 秒 · H.264 MP4${clip.stored ? ' · 本機匯入' : ' · 預載模板'}` : '尚未載入此影片'}</small></span>
                 {project.intro === item.id && <span className="selected-check"><Check size={14} /></span>}
@@ -1285,8 +1301,14 @@ export default function App() {
             <div className="stage-actions spread"><button className="button secondary" onClick={() => go(2)}><ArrowLeft size={16} /> 上一步</button><button className="button primary" onClick={() => go(4)}>選擇片尾 <ArrowRight size={17} /></button></div>
           </section>}
 
-          {stage === 4 && <section className="stage-panel"><div className="panel-kicker">STEP 04 · ORIGINAL CLOSING CLIPS</div><h1>選擇原始片尾影片</h1><p className="lead">縮圖擷取自原始 MP4；點選方案可播放完整影片。片尾會接在作品之後並保留原音訊。</p>
-            <div className="template-grid outro-grid">{templateList('outro').map(item => {
+          {stage === 4 && <section className="stage-panel"><div className="panel-kicker">STEP 04 · ORIGINAL CLOSING CLIPS</div><h1>選擇片尾（可不使用）</h1><p className="lead">可選擇一支原始片尾影片並保留原音訊，也可以略過，讓影片在最後一件入圍作品後結束。</p>
+            <div className="template-grid outro-grid">
+              <button type="button" className={`template-card no-outro-card ${project.outro === NO_OUTRO_ID ? 'selected' : ''}`} aria-pressed={project.outro === NO_OUTRO_ID} onClick={() => { update(current => ({ ...current, outro: NO_OUTRO_ID })); setPreviewTemplateId(''); }}>
+                <div className="template-visual no-outro-visual"><Film size={27} /><span>最後一件作品後結束</span></div>
+                <span className="template-caption"><strong>不使用片尾</strong><small>影片在入圍作品卡片結束後收尾</small></span>
+                {project.outro === NO_OUTRO_ID && <span className="selected-check"><Check size={14} /></span>}
+              </button>
+              {templateList('outro').map(item => {
               const clip = findClip(item.id);
               return <button className={`template-card ${project.outro === item.id ? 'selected' : ''}`} key={item.id} disabled={!clip} aria-pressed={project.outro === item.id} onClick={() => { update(current => ({ ...current, outro: item.id })); setPreviewTemplateId(item.id); }}>
                 <TemplateThumbnail clip={clip} />
@@ -1295,16 +1317,16 @@ export default function App() {
               </button>;
             })}</div>
             {previewTemplateId.startsWith('outro-') && findClip(previewTemplateId) && <div className="source-preview"><div><strong>片尾實際預覽</strong><span>{findClip(previewTemplateId)?.name}</span></div><video key={findClip(previewTemplateId)?.src} src={findClip(previewTemplateId)?.src} controls playsInline preload="metadata" /></div>}
-            <div className="stage-actions spread"><button className="button secondary" onClick={() => go(3)}><ArrowLeft size={16} /> 上一步</button><button className="button primary" disabled={!selectedEnding} onClick={() => go(5)}>預覽影片 <ArrowRight size={17} /></button></div>
+            <div className="stage-actions spread"><button className="button secondary" onClick={() => go(3)}><ArrowLeft size={16} /> 上一步</button><button className="button primary" disabled={!canPreview} onClick={() => go(5)}>預覽影片 <ArrowRight size={17} /></button></div>
           </section>}
 
           {stage === 5 && <section className="stage-panel preview-stage"><div className="panel-kicker">STEP 05 · PREVIEW & EXPORT</div><div className="edit-heading"><div><h1>預覽與匯出</h1><p className="lead">{introFieldLayouts[project.intro] ? '領域名稱會依片頭畫面直接疊入；原有固定領域字樣會被替換，不再接重複標題卡。' : '此片頭保留提供的原始畫面與音訊，不額外疊加領域文字。'}</p></div><span className="quality-pill">FULL HD · 1080P</span></div>
-            {selectedOpening && selectedEnding && duration > 0 ? <div className="player-wrap"><Player component={ExpoVideoComposition} inputProps={{ project, openingClip: selectedOpening, endingClip: selectedEnding }} durationInFrames={duration} compositionWidth={W} compositionHeight={H} fps={fps} controls loop style={{ width: '100%', aspectRatio: '16/9' }} /></div> : <div className="empty-state"><h3>模板素材尚未就緒</h3><p>請先選擇可用的片頭與片尾影片。</p></div>}
-            <div className="preview-meta"><span><Film size={15} />{project.cards.length} 件作品 · {getCardDurationSeconds(project.cardDurationSeconds)} 秒／件</span><span>{Math.floor(duration / fps / 60)}:{String(Math.floor(duration / fps) % 60).padStart(2, '0')} 分鐘總長</span><span>轉場每 {getTransitionRepeatEvery(project.transitionRepeatEvery)} 件循環</span><span>1920 × 1080 · 30 FPS · H.264 / AAC</span></div>
-            <div className="browser-note"><CircleHelp size={16} /><div><strong>瀏覽器端算繪</strong><span>MP4 會在你的裝置上產生；背景音樂只在入圍作品卡片段落播放，開頭與結尾各淡化最長 1.2 秒，片頭／片尾保留原音訊。請保持此分頁開啟，時間視電腦效能而定。</span></div></div>
+            {canPreview && duration > 0 && selectedOpening ? <div className="player-wrap"><Player component={ExpoVideoComposition} inputProps={{ project, openingClip: selectedOpening, endingClip: selectedEnding }} durationInFrames={duration} compositionWidth={W} compositionHeight={H} fps={fps} controls loop style={{ width: '100%', aspectRatio: '16/9' }} /></div> : <div className="empty-state"><h3>模板素材尚未就緒</h3><p>請先選擇可用的片頭與片尾選項。</p></div>}
+            <div className="preview-meta"><span><Film size={15} />{project.cards.length} 件作品 · {getCardDurationSeconds(project.cardDurationSeconds)} 秒／件</span><span>{Math.floor(duration / fps / 60)}:{String(Math.floor(duration / fps) % 60).padStart(2, '0')} 分鐘總長</span><span>片尾：{project.outro === NO_OUTRO_ID ? '不使用' : '已選模板'}</span><span>轉場每 {getTransitionRepeatEvery(project.transitionRepeatEvery)} 件循環</span><span>1920 × 1080 · 30 FPS · H.264 / AAC</span></div>
+            <div className="browser-note"><CircleHelp size={16} /><div><strong>瀏覽器端算繪</strong><span>MP4 會在你的裝置上產生；背景音樂只在入圍作品卡片段落播放並於段落前後淡化。片頭保留原音訊；{project.outro === NO_OUTRO_ID ? '此影片不使用片尾。' : '已選片尾保留原音訊。'}請保持此分頁開啟，時間視電腦效能而定。</span></div></div>
             {error && <div className="error-box"><X size={17} /><span>{error}</span></div>}
-            {rendering && <div className="render-progress"><div className="progress-label"><span>正在算繪 H.264 / AAC 影片…</span><b>{progress}%</b></div><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><small>請保持頁面開啟；來源片頭與片尾會完整納入輸出。</small></div>}
-            <div className="stage-actions spread"><button className="button secondary" onClick={() => go(4)}><ArrowLeft size={16} /> 返回片尾</button><button className="button primary export-button" disabled={rendering || !selectedOpening || !selectedEnding} onClick={() => void exportVideo()}>{rendering ? <><span className="spinner" /> 正在算繪 {progress}%</> : <><Download size={17} /> 匯出此領域 MP4</>}</button></div>
+            {rendering && <div className="render-progress"><div className="progress-label"><span>正在算繪 H.264 / AAC 影片…</span><b>{progress}%</b></div><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><small>請保持頁面開啟；影片會依所選片尾選項完整輸出。</small></div>}
+            <div className="stage-actions spread"><button className="button secondary" onClick={() => go(4)}><ArrowLeft size={16} /> 返回片尾</button><button className="button primary export-button" disabled={rendering || !canPreview} onClick={() => void exportVideo()}>{rendering ? <><span className="spinner" /> 正在算繪 {progress}%</> : <><Download size={17} /> 匯出此領域 MP4</>}</button></div>
           </section>}
         </main>
         <footer className="site-footer">

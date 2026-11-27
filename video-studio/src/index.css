@@ -213,7 +213,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 .template-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; }
 .template-grid.intro-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-.template-grid.outro-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.template-grid.outro-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .template-card { position: relative; overflow: hidden; padding: 8px; border: 1px solid var(--line); border-radius: 11px; background: #fff; text-align: left; transition: border-color .16s, box-shadow .16s, transform .16s; }
 .template-card:hover:not(:disabled) { transform: translateY(-2px); border-color: #b9d5e5; box-shadow: 0 8px 20px #193e5710; }
 .template-card.selected { padding: 7px; border: 2px solid var(--blue); box-shadow: 0 0 0 3px #176fba12; }
@@ -221,6 +221,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .template-visual { display: flex; aspect-ratio: 16 / 9; align-items: center; justify-content: center; overflow: hidden; border-radius: 6px; background: #eaf3f8; color: #527288; text-align: center; }
 .template-visual img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .template-visual span { padding: 8px; font-size: 11px; line-height: 1.5; }
+.no-outro-visual { flex-direction: column; gap: 7px; background: linear-gradient(135deg, #eaf3f8, #f8fbfd); color: #648397; }
+.no-outro-visual span { font-size: 10px; }
 .template-caption { display: flex; flex-direction: column; gap: 4px; padding: 10px 4px 4px; }
 .template-caption strong { color: #31566e; font-size: 12px; }
 .template-caption small { min-height: 30px; color: #7f909d; font-size: 10px; line-height: 1.55; }
